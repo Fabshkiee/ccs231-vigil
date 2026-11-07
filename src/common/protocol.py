@@ -146,7 +146,7 @@ def format_event(event):
     return f"EVENT|{json.dumps(event, separators=(',', ':'))}"
 
 def format_err(code, message):
-    return f"ERR|{int(code)}|{message}"
+    return f"ERR|{code}|{_field(message)}"
 
 
 
