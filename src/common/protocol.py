@@ -113,6 +113,15 @@ def parse_event(line):
 def parse_get_stats(line):
     return _topic_only("GET_STATS", line)
 
+def parse_err(line):
+    parts = line.split("|", 2)
+    if len(parts) != 3:
+        return _bad("bad_field_count")
+    if not (parts[1].isascii() and parts[1].isdigit()):
+        return _bad("bad_code")
+    return Ok("ERR", {"code": int(parts[1]), "message": parts[2]})
+
+
 #format
 def format_ack(topic, sub_id, event_id):
     return f"ACK|{_field(topic)}|{_field(sub_id)}|{_field(event_id)}"
@@ -125,3 +134,6 @@ def format_pub(topic, payload):
 
 def format_event(event):
     return f"EVENT|{json.dumps(event, separators=(',', ':'))}"
+
+def format_err(code, message):
+    return f"ERR|{int(code)}|{message}"

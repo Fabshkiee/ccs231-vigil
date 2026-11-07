@@ -60,6 +60,10 @@ class TestRoundTrip(unittest.TestCase):
         r = p.parse_ack(p.format_ack("sighting", "responseteam", "e-8"))
         self.assertEqual(r.fields["event_id"], "e-8")
 
+    def test_err(self):
+        r = p.parse_err(p.format_err(400, "empty_topic"))
+        self.assertEqual((r.fields["code"], r.fields["message"]), (400, "empty_topic"))
+
 
 class TestRejects(unittest.TestCase):
     def test_pub_rejects(self):
@@ -79,6 +83,11 @@ class TestRejects(unittest.TestCase):
     def test_ack_rejects(self):
         r=p.parse_ack("ACK|a|b|")
         self.assertEqual(r.reason, "empty_event_id")
+
+    def test_err_bad_code(self):
+        for line in ["ERR|abc|x", "ERR|²|x"]:
+            with self.subTest(line=line):
+                self.assertEqual(p.parse_err(line).reason, "bad_code")
 
 if __name__ == "__main__":
     unittest.main()
