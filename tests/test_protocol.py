@@ -34,7 +34,7 @@ class TestBuffering(unittest.TestCase):
 
     def test_oversize_closes(self):
         _, _, err = p.split_lines(b"", b"x" * (MAX_LINE_BYTES + 1))
-        self.assertEqual((err.code, err.close), (413, True))
+        self.assertEqual((err.code, err.close), (413, True, "line_too_long"))
 
 class TestRoundTrip(unittest.TestCase):
     def test_sub(self):
@@ -52,6 +52,9 @@ class TestRoundTrip(unittest.TestCase):
         r = p.parse_pub(p.format_pub("sighting", payload))
         self.assertEqual(r.fields["payload"], payload)
 
+    def test_event(self):
+        ev = {"event_id": "x", "topic": "alert", "payload": {}, "created_at": 1.0}
+        self.assertEqual(p.parse_event(p.format_event(ev)).fields["event"], ev)
 
 class TestRejects(unittest.TestCase):
     def test_pub_rejects(self):

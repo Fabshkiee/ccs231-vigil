@@ -23,7 +23,7 @@ def split_lines(buffer, data):
     buf = buffer + data
     *complete, rest = buf.split(b"\n")
     if any(len(line) > MAX_LINE_BYTES for line in complete) or len(rest) > MAX_LINE_BYTES:
-        return [], b"", Err(413, "line too long", close=True)
+        return [], b"", Err(413, "line_too_long", close=True)
     return complete, rest, None
 
 #_helpers
