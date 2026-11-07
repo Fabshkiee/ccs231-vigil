@@ -111,6 +111,13 @@ class TestRejects(unittest.TestCase):
 
     def test_pub_ack_rejects(self):
         self.assertEqual(p.parse_pub_ack("PUB_ACK|").reason, "empty_event_id")      
+    
+    def test_event_rejects(self):
+        self.assertEqual(self.reason("EVENT|{}"), "missing_event_id")
+
+    def test_err_rejects_newline(self):
+        with self.assertRaises(ValueError):
+            p.format_err(400, "a\nb")
 
     def test_err_bad_code(self):
         for line in ["ERR|abc|x", "ERR|²|x"]:

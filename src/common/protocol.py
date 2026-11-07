@@ -118,6 +118,9 @@ def parse_event(line):
     event, err = _json_object(parts[1])
     if err:
         return err
+    for key in ("event_id", "topic", "payload", "created_at"):
+        if key not in event:
+            return _bad(f"missing_{key}")
     return Ok("EVENT", {"event": event})
 
 def parse_get_stats(line):
