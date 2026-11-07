@@ -44,5 +44,8 @@ class TestRoundTrip(unittest.TestCase):
     def test_sub_ack(self):
         self.assertEqual(p.parse_sub_ack(p.format_sub_ack("alert")).fields["topic"], "alert")
 
+    def test_get_stats(self):
+        self.assertEqual(p.parse_get_stats(p.format_get_stats("alert")).cmd, "GET_STATS")
+
 if __name__ == "__main__":
     unittest.main()

@@ -62,3 +62,9 @@ def parse_sub_ack(line):
 
 def format_sub_ack(topic):
     return f"SUB_ACK|{_field(topic)}"
+
+def parse_get_stats(line):
+    return _topic_only("GET_STATS", line)
+
+def format_get_stats(topic):
+    return f"GET_STATS|{_field(topic)}"
