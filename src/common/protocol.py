@@ -60,6 +60,7 @@ def parse_sub(line):
 def format_sub(topic, sub_id):
     return f"SUB|{_field(topic)}|{_field(sub_id)}"
 
+#topic_only
 def _topic_only(cmd, line):
     parts = line.split("|")
     if len(parts) != 2:
@@ -71,13 +72,10 @@ def _topic_only(cmd, line):
 
 def parse_sub_ack(line):
     return _topic_only("SUB_ACK", line)
-
 def format_sub_ack(topic):
     return f"SUB_ACK|{_field(topic)}"
 
-def parse_get_stats(line):
-    return _topic_only("GET_STATS", line)
-
+#parse
 def parse_pub(line):
     parts = line.split("|", 2)
     if len(parts) != 3:
@@ -103,6 +101,19 @@ def parse_ack(line):
         return _bad("empty_event_id")
     return Ok("ACK", {"topic": topic, "sub_id": sub_id, "event_id": event_id})
 
+def parse_event(line):
+    parts = line.split("|", 1)
+    if len(parts) != 2:
+        return _bad("bad_field_count")
+    event, err = _json_object(parts[1])
+    if err:
+        return err
+    return Ok("EVENT", {"event": event})
+
+def parse_get_stats(line):
+    return _topic_only("GET_STATS", line)
+
+#format
 def format_ack(topic, sub_id, event_id):
     return f"ACK|{_field(topic)}|{_field(sub_id)}|{_field(event_id)}"
 
@@ -111,3 +122,6 @@ def format_get_stats(topic):
 
 def format_pub(topic, payload):
     return f"PUB|{_field(topic)}|{json.dumps(payload, separators=(',', ':'))}"
+
+def format_event(event):
+    return f"EVENT|{json.dumps(event, separators=(',', ':'))}"
