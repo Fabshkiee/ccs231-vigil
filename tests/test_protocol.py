@@ -34,7 +34,7 @@ class TestBuffering(unittest.TestCase):
 
     def test_oversize_closes(self):
         _, _, err = p.split_lines(b"", b"x" * (MAX_LINE_BYTES + 1))
-        self.assertEqual((err.code, err.close), (413, True, "line_too_long"))
+        self.assertEqual((err.code, err.close, err.reason), (413, True, "line_too_long"))
 
 class TestRoundTrip(unittest.TestCase):
     def test_sub(self):
@@ -49,16 +49,17 @@ class TestRoundTrip(unittest.TestCase):
 
     def test_pub_pipe_in_payload(self):
         payload = {"note": "a|b", "sev": 5}
-        r = p.parse_pub(p.format_pub("sighting", payload))
+        r=p.parse_pub(p.format_pub("sighting", payload))
         self.assertEqual(r.fields["payload"], payload)
 
     def test_event(self):
-        ev = {"event_id": "x", "topic": "alert", "payload": {}, "created_at": 1.0}
+        ev= {"event_id": "x", "topic": "alert", "payload": {}, "created_at": 1.0}
         self.assertEqual(p.parse_event(p.format_event(ev)).fields["event"], ev)
 
-    def test_ack_rejects(self):
-        r = p.parse_ack("ACK|a|b|")
-        self.assertEqual(r.reason, "empty_event_id")
+    def test_ack(self):
+        r = p.parse_ack(p.format_ack("sighting", "responseteam", "e-8"))
+        self.assertEqual(r.fields["event_id"], "e-8")
+
 
 class TestRejects(unittest.TestCase):
     def test_pub_rejects(self):
@@ -74,6 +75,10 @@ class TestRejects(unittest.TestCase):
                 self.assertIsInstance(r, p.Err)
                 self.assertFalse(r.close)
                 self.assertEqual(r.reason, reason)
+    
+    def test_ack_rejects(self):
+        r=p.parse_ack("ACK|a|b|")
+        self.assertEqual(r.reason, "empty_event_id")
 
 if __name__ == "__main__":
     unittest.main()
