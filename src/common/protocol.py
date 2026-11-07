@@ -74,7 +74,7 @@ def parse_sub_ack(line):
     return _topic_only("SUB_ACK", line)
 def format_sub_ack(topic):
     return f"SUB_ACK|{_field(topic)}"
-    
+
 def parse_pub_ack(line):
     parts = line.split("|")
     if len(parts) != 2:
@@ -154,6 +154,7 @@ PARSERS = {
     "SUB": parse_sub, "SUB_ACK": parse_sub_ack, "ACK": parse_ack,
     "GET_STATS": parse_get_stats, "PUB": parse_pub,
     "EVENT": parse_event, "ERR": parse_err,
+    "PUB_ACK": parse_pub_ack,
 }
 
 def parse_line(line):

@@ -44,6 +44,9 @@ class TestRoundTrip(unittest.TestCase):
     def test_sub_ack(self):
         self.assertEqual(p.parse_sub_ack(p.format_sub_ack("alert")).fields["topic"], "alert")
 
+    def test_pub_ack(self):
+        self.assertEqual(p.parse_pub_ack(p.format_pub_ack("e-8")).fields["event_id"], "e-8")
+
     def test_get_stats(self):
         self.assertEqual(p.parse_get_stats(p.format_get_stats("alert")).cmd, "GET_STATS")
 
@@ -105,6 +108,9 @@ class TestRejects(unittest.TestCase):
     def test_ack_rejects(self):
         r=p.parse_ack("ACK|a|b|")
         self.assertEqual(r.reason, "empty_event_id")
+
+    def test_pub_ack_rejects(self):
+        self.assertEqual(p.parse_pub_ack("PUB_ACK|").reason, "empty_event_id")      
 
     def test_err_bad_code(self):
         for line in ["ERR|abc|x", "ERR|²|x"]:
