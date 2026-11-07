@@ -10,4 +10,4 @@ SEV_MAX = 5
 ALERT_MIN_SEV = 4
 
 EVENT_LOG_FILE = "data/event_log.json"
-OFFSETS_FILE = "data/offset.json"
+OFFSETS_FILE = "data/offsets.json"
