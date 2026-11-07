@@ -64,6 +64,10 @@ class TestRoundTrip(unittest.TestCase):
         r = p.parse_err(p.format_err(400, "empty_topic"))
         self.assertEqual((r.fields["code"], r.fields["message"]), (400, "empty_topic"))
 
+    def test_dispatcher_matches_direct_parser(self):
+        line = p.format_sub("sighting", "team")
+        self.assertEqual(p.parse_line(line), p.parse_sub(line))
+
 
 class TestRejects(unittest.TestCase):
     def test_pub_rejects(self):
@@ -79,6 +83,24 @@ class TestRejects(unittest.TestCase):
                 self.assertIsInstance(r, p.Err)
                 self.assertFalse(r.close)
                 self.assertEqual(r.reason, reason)
+
+    def reason(self, line):
+        r = p.parse_line(line)
+        self.assertIsInstance(r, p.Err)
+        self.assertFalse(r.close)
+        return r.reason
+
+    def test_dispatcher_rejects(self):
+        cases = [
+            ("", "empty_line"),
+            ("|", "unknown_command"),
+            ("HELLO|x", "unknown_command"),
+            ("SUB", "bad_field_count"),
+            (b"\xff\xfe", "bad_encoding"),
+        ]
+        for line, reason in cases:
+            with self.subTest(line=line):
+                self.assertEqual(self.reason(line), reason)
     
     def test_ack_rejects(self):
         r=p.parse_ack("ACK|a|b|")

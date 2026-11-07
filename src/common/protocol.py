@@ -137,3 +137,25 @@ def format_event(event):
 
 def format_err(code, message):
     return f"ERR|{int(code)}|{message}"
+
+
+
+PARSERS = {
+    "SUB": parse_sub, "SUB_ACK": parse_sub_ack, "ACK": parse_ack,
+    "GET_STATS": parse_get_stats, "PUB": parse_pub,
+    "EVENT": parse_event, "ERR": parse_err,
+}
+
+def parse_line(line):
+    if isinstance(line, bytes):
+        try:
+            line = line.decode("utf-8")
+        except UnicodeDecodeError:
+            return _bad("bad_encoding")
+    line = line.rstrip("\r")
+    if not line.strip():
+        return _bad("empty_line")
+    parser = PARSERS.get(line.split("|", 1)[0])
+    if parser is None:
+        return _bad("unknown_command")
+    return parser(line)
