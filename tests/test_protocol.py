@@ -56,6 +56,10 @@ class TestRoundTrip(unittest.TestCase):
         ev = {"event_id": "x", "topic": "alert", "payload": {}, "created_at": 1.0}
         self.assertEqual(p.parse_event(p.format_event(ev)).fields["event"], ev)
 
+    def test_ack_rejects(self):
+        r = p.parse_ack("ACK|a|b|")
+        self.assertEqual(r.reason, "empty_event_id")
+
 class TestRejects(unittest.TestCase):
     def test_pub_rejects(self):
         cases = [

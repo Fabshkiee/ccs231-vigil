@@ -90,6 +90,22 @@ def parse_pub(line):
         return err
     return Ok("PUB", {"topic": topic, "payload": payload})
 
+def parse_ack(line):
+    parts = line.split("|")
+    if len(parts) != 4:
+        return _bad("bad_field_count")
+    topic, sub_id, event_id = parts[1].strip(), normalise_id(parts[2]), parts[3].strip()
+    if not topic:
+        return _bad("empty_topic")
+    if not sub_id:
+        return _bad("empty_sub_id")
+    if not event_id:
+        return _bad("empty_event_id")
+    return Ok("ACK", {"topic": topic, "sub_id": sub_id, "event_id": event_id})
+
+def format_ack(topic, sub_id, event_id):
+    return f"ACK|{_field(topic)}|{_field(sub_id)}|{_field(event_id)}"
+
 def format_get_stats(topic):
     return f"GET_STATS|{_field(topic)}"
 
