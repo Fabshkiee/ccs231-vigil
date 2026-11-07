@@ -47,3 +47,18 @@ def parse_sub(line):
 
 def format_sub(topic, sub_id):
     return f"SUB|{_field(topic)}|{_field(sub_id)}"
+
+def _topic_only(cmd, line):
+    parts = line.split("|")
+    if len(parts) != 2:
+        return _bad("bad_field_count")
+    topic = parts[1].strip()
+    if not topic:
+        return _bad("empty_topic")
+    return Ok(cmd, {"topic": topic})
+
+def parse_sub_ack(line):
+    return _topic_only("SUB_ACK", line)
+
+def format_sub_ack(topic):
+    return f"SUB_ACK|{_field(topic)}"

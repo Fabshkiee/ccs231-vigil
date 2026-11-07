@@ -41,5 +41,8 @@ class TestRoundTrip(unittest.TestCase):
         r=p.parse_sub(p.format_sub("sighting", "responseteam"))
         self.assertEqual(r, p.Ok("SUB", {"topic": "sighting", "sub_id": "responseteam"}))
 
+    def test_sub_ack(self):
+        self.assertEqual(p.parse_sub_ack(p.format_sub_ack("alert")).fields["topic"], "alert")
+
 if __name__ == "__main__":
     unittest.main()
