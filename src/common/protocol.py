@@ -74,7 +74,17 @@ def parse_sub_ack(line):
     return _topic_only("SUB_ACK", line)
 def format_sub_ack(topic):
     return f"SUB_ACK|{_field(topic)}"
-
+    
+def parse_pub_ack(line):
+    parts = line.split("|")
+    if len(parts) != 2:
+        return _bad("bad_field_count")
+    event_id = parts[1].strip()
+    if not event_id:
+        return _bad("empty_event_id")
+    return Ok("PUB_ACK", {"event_id": event_id})
+def format_pub_ack(event_id):
+    return f"PUB_ACK|{_field(event_id)}"
 #parse
 def parse_pub(line):
     parts = line.split("|", 2)
