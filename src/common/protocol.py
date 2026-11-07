@@ -26,6 +26,7 @@ def split_lines(buffer, data):
         return [], b"", Err(413, "line too long", close=True)
     return complete, rest, None
 
+#_helpers
 def _bad(reason):
     return Err(400, reason)
 
@@ -33,6 +34,17 @@ def _field(value):
     if "|" in value or "\n" in value:
         raise ValueError(f"field contains '|' or newline: {value[:80]!r}")
     return value
+
+def _json_object(text):
+    try:
+        value = json.loads(text)
+    except (ValueError, RecursionError):
+        return None, _bad("bad_json")
+    if not isinstance(value, dict):
+        return None, _bad("payload_not_object")
+    return value, None
+
+
 
 def parse_sub(line):
     parts = line.split("|")
@@ -66,5 +78,20 @@ def format_sub_ack(topic):
 def parse_get_stats(line):
     return _topic_only("GET_STATS", line)
 
+def parse_pub(line):
+    parts = line.split("|", 2)
+    if len(parts) != 3:
+        return _bad("bad_field_count")
+    topic=parts[1].strip()
+    if not topic:
+        return _bad("empty_topic")
+    payload, err = _json_object(parts[2])
+    if err:
+        return err
+    return Ok("PUB", {"topic": topic, "payload": payload})
+
 def format_get_stats(topic):
     return f"GET_STATS|{_field(topic)}"
+
+def format_pub(topic, payload):
+    return f"PUB|{_field(topic)}|{json.dumps(payload, separators=(',', ':'))}"

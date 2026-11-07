@@ -47,5 +47,26 @@ class TestRoundTrip(unittest.TestCase):
     def test_get_stats(self):
         self.assertEqual(p.parse_get_stats(p.format_get_stats("alert")).cmd, "GET_STATS")
 
+    def test_pub_pipe_in_payload(self):
+        payload = {"note": "a|b", "sev": 5}
+        r = p.parse_pub(p.format_pub("sighting", payload))
+        self.assertEqual(r.fields["payload"], payload)
+
+
+class TestRejects(unittest.TestCase):
+    def test_pub_rejects(self):
+        cases = [
+            ("PUB|sighting", "bad_field_count"),
+            ('PUB|sighting|"str"', "payload_not_object"),
+            ("PUB|sighting|[1]", "payload_not_object"),
+            ("PUB|sighting|{broken", "bad_json"),
+        ]
+        for line, reason in cases:
+            with self.subTest(line=line):
+                r=p.parse_pub(line)
+                self.assertIsInstance(r, p.Err)
+                self.assertFalse(r.close)
+                self.assertEqual(r.reason, reason)
+
 if __name__ == "__main__":
     unittest.main()
