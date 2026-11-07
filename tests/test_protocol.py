@@ -36,6 +36,10 @@ class TestBuffering(unittest.TestCase):
         _, _, err = p.split_lines(b"", b"x" * (MAX_LINE_BYTES + 1))
         self.assertEqual((err.code, err.close), (413, True))
 
+class TestRoundTrip(unittest.TestCase):
+    def test_sub(self):
+        r=p.parse_sub(p.format_sub("sighting", "responseteam"))
+        self.assertEqual(r, p.Ok("SUB", {"topic": "sighting", "sub_id": "responseteam"}))
 
 if __name__ == "__main__":
     unittest.main()
