@@ -7,6 +7,7 @@ import os
 import json
 
 LOG_LOCK = thr.Lock()
+EVENT_LOG_PATH = "data/event_log.json"
 
 class StoreError(Exception):
 	"""Raised when event_log.json is corrupted"""
@@ -58,3 +59,8 @@ def load_events(filepath: str = "data/event_log.json") -> list:
 		except json.JSONDecodeError as e:
 			raise StoreError(f"Corrupted log file at {filepath}: {e}")
 
+def append_event(event: dict, filepath: str=EVENT_LOG_PATH):
+	with LOG_LOCK:
+		events = load_events(filepath)
+		events.append(event)
+		atomic_write(filepath, events)
