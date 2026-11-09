@@ -115,5 +115,7 @@ class TestLoadEvents(unittest.TestCase):
 		self.assertEqual(result, expected_data)
 
 	def test_load_corrupted_file(self):
-		...
+		self._write_file("[{bad json content or smth]")
+		with self.assertRaises(StoreError):
+			load_events(self.file_path)
 
