@@ -6,16 +6,14 @@ from tempfile import TemporaryDirectory
 
 from src.common.storage import atomic_write, load_events, StoreError
 
-class TestAtomicWrite(unittest.TestCase):
-
+class BaseStorageTest(unittest.TestCase):
 	def setUp(self):
 		# each test gets its own temp dir
 		self.test_dir = TemporaryDirectory()
-		self.file_path = os.path.join(self.test_dir.name, "test_event_log.json")
+		self.file_path = os.path.join(self.test_dir.name, "test_file.json")
 
 	def tearDown(self):
-		# clean up after each test
-		self.test_dir.cleanup()
+		self.test_dir.cleanup() # clean up after each test
 
 	def _read_file(self, path=None):
 		"""Helper to quickly read and load JSON from the target file."""
@@ -23,11 +21,16 @@ class TestAtomicWrite(unittest.TestCase):
 		with open(target, "r", encoding="utf-8") as f:
 			return json.load(f)
 
+	def _write_file(self, content: str):
+		"""Helper to quickly write content to the target file."""
+		with open(self.file_path, "w", encoding="utf-8") as f:
+			f.write(content)
+
+class TestAtomicWrite(BaseStorageTest):
 	def _assert_no_tmp_files(self):
 		"""Helper to test if no temporary .tmp files were left behind."""
 		tmp_files = [f for f in os.listdir(self.test_dir.name) if f.endswith(".tmp")]
 		self.assertEqual(len(tmp_files), 0, f"Lingering .tmp files found: {tmp_files}")
-
 
 	# aw = atomic_write
 	def test_aw_success(self):
@@ -72,20 +75,7 @@ class TestAtomicWrite(unittest.TestCase):
 		self.assertEqual(self._read_file(), init_data)
 		self._assert_no_tmp_files()
 
-class TestLoadEvents(unittest.TestCase):
-
-	def setUp(self):
-		self.test_dir = TemporaryDirectory()
-		self.file_path = os.path.join(self.test_dir.name, "test_load.json")
-
-	def tearDown(self):
-		self.test_dir.cleanup()
-
-	def _write_file(self, content: str):
-		"""Helper to quickly write content to the target file."""
-		with open(self.file_path, "w", encoding="utf-8") as f:
-			f.write(content)
-
+class TestLoadEvents(BaseStorageTest):
 	def test_load_missing_file(self):
 		# case: program runs the first time,
 		# data/ and it's files won't exist yet 
