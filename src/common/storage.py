@@ -43,7 +43,7 @@ def atomic_write(filepath: str, data: dict | list):
 	except OSError as e:
 		if os.path.exists(tmp_filepath):
 			os.remove(tmp_filepath)
-		raise e
+		raise e # the broker handles this and replies with 503
 
 def load_events(filepath: str = "data/event_log.json") -> list:
 	with LOG_LOCK:
