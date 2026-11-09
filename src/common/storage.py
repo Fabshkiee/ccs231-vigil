@@ -6,7 +6,7 @@ import threading as thr
 import os 
 import json
 
-LOG_LOCK = thr.Lock()
+LOG_LOCK = thr.RLock()
 EVENT_LOG_PATH = "data/event_log.json"
 
 class StoreError(Exception):
