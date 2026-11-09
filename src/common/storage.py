@@ -8,7 +8,7 @@ def atomic_write(filepath: str, data: dict | list):
 	tmp_filepath = f"{filepath}.tmp"
 
 	try:
-		with open(filepath, 'w', encoding='utf-8') as f:
+		with open(tmp_filepath, 'w', encoding='utf-8') as f:
 			f.write(json.dumps(data))
 			f.flush()
 
