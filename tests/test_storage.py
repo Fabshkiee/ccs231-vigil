@@ -71,3 +71,13 @@ class TestAtomicWrite(unittest.TestCase):
 
 		self.assertEqual(self._read_file(), init_data)
 		self._assert_no_tmp_files()
+
+class TestLoadEvents(unittest.TestCase):
+
+	def setUp(self):
+		self.test_dir = TemporaryDirectory()
+		self.file_path = os.path.join(self.test_dir.name, "test_load.json")
+
+	def tearDown(self):
+		self.test_dir.cleanup()
+
