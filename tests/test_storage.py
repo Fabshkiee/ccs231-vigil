@@ -30,10 +30,7 @@ class TestAtomicWrite(unittest.TestCase):
 		atomic_write(self.file_path, data)
 
 		self.assertTrue(os.path.exists(self.file_path))
-		with open(self.file_path, "r", encoding="utf-8") as f:
-			loaded_data = json.load(f)
-
-		self.assertEqual(loaded_data, data)
+		self.assertEqual(self._read_file(), data)
 
 	def test_aw_unix_directory_sync(self):
 		# patch os from windows to unix
@@ -54,9 +51,7 @@ class TestAtomicWrite(unittest.TestCase):
 	def test_aw_overwrite(self):
 		atomic_write(self.file_path, [1, 2, 3]) # initial data
 		atomic_write(self.file_path, [4, 5, 6]) # overwrite
-
-		with open(self.file_path, 'r', encoding='utf-8') as f:
-			self.assertEqual(json.load(f), [4, 5, 6])
+		self.assertEqual(self._read_file(), [4, 5, 6]) # check
 
 		# check: a failed write must delete the .tmp file
 		tmp_files = [f for f in os.listdir(self.test_dir.name) if f.endswith(".tmp")]
