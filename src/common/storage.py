@@ -21,13 +21,17 @@ def atomic_write(filepath: str, data: dict | list):
 
 		os.replace(tmp_filepath, filepath)
 
-		dir_name = os.path.dirname(os.path.abspath(filepath))
-		dir_fd =  os.open(dir_name, os.O_RDONLY)
-		try:
-			os.fsync(dir_fd)
-		finally:
-			os.close(dir_fd)
-
+		# For non-windows
+		if os.name != 'nt' and dir_name:
+			try:
+				dir_fd =  os.open(dir_name, os.O_RDONLY)	
+				try:	
+					os.fsync(dir_fd)
+				finally:
+					os.close(dir_fd)
+			except OSError:
+				pass
+			
 	except OSError as e:
 		if os.path.exists(tmp_filepath):
 			os.remove(tmp_filepath)
