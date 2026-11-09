@@ -5,6 +5,11 @@
 import os 
 import json
 def atomic_write(filepath: str, data: dict | list):
+	# Create the parent directories of filepath if it doesn't exist
+	dir_name = os.path.dirname(os.path.abspath(filepath))
+	if dir_name:
+		os.makedirs(dir_name, exist_ok=True)
+
 	tmp_filepath = f"{filepath}.tmp"
 
 	try:
