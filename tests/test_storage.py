@@ -60,3 +60,14 @@ class TestAtomicWrite(unittest.TestCase):
 		self.assertEqual(self._read_file(), [4, 5, 6]) # check
 		self._assert_no_tmp_files() # check: a failed write must delete the .tmp file
 
+	def test_aw_failure_cleanup(self):
+		init_data = ["old_data"]
+		atomic_write(self.file_path, init_data)
+
+		# simulate disk full
+		with patch("os.replace", side_effect=OSError("Disk full")):
+			with self.assertRaises(OSError):
+				atomic_write(self.file_path, ["new_data"])
+
+		self.assertEqual(self._read_file(), init_data)
+		self._assert_no_tmp_files()
