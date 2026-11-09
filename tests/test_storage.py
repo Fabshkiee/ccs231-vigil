@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from unittest.mock import patch
 from tempfile import TemporaryDirectory
 
 from src.common.storage import atomic_write
@@ -26,3 +27,19 @@ class TestAtomicWrite(unittest.TestCase):
 			loaded_data = json.load(f)
 
 		self.assertEqual(loaded_data, data)
+
+	def test_atomic_write_unix_directory_sync(self):
+		# patch os from windows to unix
+		with patch("os.name", "posix"):
+			with patch("os.open") as mock_os_open, \
+				patch("os.fsync") as mock_fsync, \
+				patch("os.close") as mock_os_close:
+
+				mock_os_open.return_value = 99 # replacement after patching os.open() 
+
+				atomic_write(self.file_path, {"test": "data"})
+
+				# verify that the directory was opened and fsynced on Unix
+				mock_os_open.assert_called()
+				mock_fsync.assert_called()
+				mock_os_close.assert_called_with(99)
