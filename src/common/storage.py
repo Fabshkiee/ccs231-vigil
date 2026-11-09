@@ -2,8 +2,16 @@
 # Rule: write to a .tmp file, fsync it, then rename it over the real one.
 # Never open the real file and start typing into it — if we crash halfway,
 # the log still has to be readable when we come back.
+import threading as thr
 import os 
 import json
+
+LOG_LOCK = thr.Lock()
+
+class StoreError(Exception):
+	"""Raised when event_log.json is corrupted"""
+	pass
+
 def atomic_write(filepath: str, data: dict | list):
 	# Create the parent directories of filepath if it doesn't exist
 	dir_name = os.path.dirname(os.path.abspath(filepath))
@@ -36,3 +44,17 @@ def atomic_write(filepath: str, data: dict | list):
 		if os.path.exists(tmp_filepath):
 			os.remove(tmp_filepath)
 		raise e
+
+def load_events(filepath: str = "data/event_log.json") -> list:
+	with LOG_LOCK:
+		if not os.path.exists(filepath):
+			return []
+
+		try:
+			with open(filepath, "r", encoding="utf-8") as f:
+				data = json.load(f)
+				return data if isinstance(data, list) else []
+		# check if event_log.json is corrupted
+		except json.JSONDecodeError as e:
+			raise StoreError(f"Corrupted log file at {filepath}: {e}")
+
