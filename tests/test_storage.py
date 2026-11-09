@@ -17,6 +17,12 @@ class TestAtomicWrite(unittest.TestCase):
 		# clean up after each test
 		self.test_dir.cleanup()
 
+	def _read_file(self, path=None):
+		"""Helper to quickly read and load JSON from the target file."""
+		target = path or self.file_path
+		with open(target, "r", encoding="utf-8") as f:
+			return json.load(f)
+
 	# aw = atomic_write
 	def test_aw_success(self):
 		data = [{"event_id": "1", "topic": "sighting"}]
