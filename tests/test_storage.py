@@ -58,7 +58,5 @@ class TestAtomicWrite(unittest.TestCase):
 		atomic_write(self.file_path, [1, 2, 3]) # initial data
 		atomic_write(self.file_path, [4, 5, 6]) # overwrite
 		self.assertEqual(self._read_file(), [4, 5, 6]) # check
+		self._assert_no_tmp_files() # check: a failed write must delete the .tmp file
 
-		# check: a failed write must delete the .tmp file
-		tmp_files = [f for f in os.listdir(self.test_dir.name) if f.endswith(".tmp")]
-		self.assertEqual(len(tmp_files), 0)
