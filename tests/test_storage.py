@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from tempfile import TemporaryDirectory
 
-from src.common.storage import atomic_write
+from src.common.storage import atomic_write, load_events, StoreError
 
 class TestAtomicWrite(unittest.TestCase):
 
@@ -80,4 +80,13 @@ class TestLoadEvents(unittest.TestCase):
 
 	def tearDown(self):
 		self.test_dir.cleanup()
+
+	def test_load_missing_file(self):
+		...
+
+	def test_load_valid_file(self):
+		...
+
+	def test_load_corrupted_file(self):
+		...
 
