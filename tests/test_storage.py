@@ -24,7 +24,7 @@ class TestAtomicWrite(unittest.TestCase):
 			return json.load(f)
 
 	def _assert_no_tmp_files(self):
-		"""Tests if no temporary .tmp files were left behind."""
+		"""Helper to test if no temporary .tmp files were left behind."""
 		tmp_files = [f for f in os.listdir(self.test_dir.name) if f.endswith(".tmp")]
 		self.assertEqual(len(tmp_files), 0, f"Lingering .tmp files found: {tmp_files}")
 
