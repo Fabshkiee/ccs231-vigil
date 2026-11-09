@@ -44,3 +44,14 @@ class TestAtomicWrite(unittest.TestCase):
 				mock_os_open.assert_called()
 				mock_fsync.assert_called()
 				mock_os_close.assert_called_with(99)
+
+	def test_aw_overwrite(self):
+		atomic_write(self.file_path, [1, 2, 3]) # initial data
+		atomic_write(self.file_path, [4, 5, 6]) # overwrite
+
+		with open(self.file_path, 'r', encoding='utf-8') as f:
+			self.assertEqual(json.load(f), [4, 5, 6])
+
+		# check: a failed write must delete the .tmp file
+		tmp_files = [f for f in os.listdir(self.test_dir.name) if f.endswith(".tmp")]
+		self.assertEqual(len(tmp_files), 0)
