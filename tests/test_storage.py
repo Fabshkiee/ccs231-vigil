@@ -82,7 +82,12 @@ class TestLoadEvents(unittest.TestCase):
 		self.test_dir.cleanup()
 
 	def test_load_missing_file(self):
-		...
+		# case: program runs the first time,
+		# data/ and it's files won't exist yet 
+		# so load_events returns an empty string 
+		# as placeholder
+		result = load_events(self.file_path)
+		self.assertEqual(result, [])
 
 	def test_load_valid_file(self):
 		...
