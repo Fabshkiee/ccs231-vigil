@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from tempfile import TemporaryDirectory
 
-from src.common.storage import atomic_write, load_events, StoreError
+from src.common.storage import atomic_write, load_events, append_event, StoreError
 
 class BaseStorageTest(unittest.TestCase):
 	def setUp(self):
@@ -106,4 +106,19 @@ class TestLoadEvents(BaseStorageTest):
 		self._write_file("[{bad json content or smth]")
 		with self.assertRaises(StoreError):
 			load_events(self.file_path)
+
+class TestAppendEvents(BaseStorageTest):
+	def test_append_event_new_file(self):
+		event = {
+			"sighting": {
+				"event_id": 12, 
+				"topic": "sighting", 
+				"payload": {},
+				"created_at": 2400
+			},
+			"alert": []
+		}
+
+		append_event(event, self.file_path)
+		self.assertEqual(self._read_file(), [event])
 
