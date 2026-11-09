@@ -17,7 +17,8 @@ class TestAtomicWrite(unittest.TestCase):
 		# clean up after each test
 		self.test_dir.cleanup()
 
-	def test_atomic_write_success(self):
+	# aw = atomic_write
+	def test_aw_success(self):
 		data = [{"event_id": "1", "topic": "sighting"}]
 
 		atomic_write(self.file_path, data)
@@ -28,7 +29,7 @@ class TestAtomicWrite(unittest.TestCase):
 
 		self.assertEqual(loaded_data, data)
 
-	def test_atomic_write_unix_directory_sync(self):
+	def test_aw_unix_directory_sync(self):
 		# patch os from windows to unix
 		with patch("os.name", "posix"):
 			with patch("os.open") as mock_os_open, \
