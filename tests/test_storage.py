@@ -81,6 +81,11 @@ class TestLoadEvents(unittest.TestCase):
 	def tearDown(self):
 		self.test_dir.cleanup()
 
+	def _write_file(self, content: str):
+		"""Helper to quickly write content to the target file."""
+		with open(self.file_path, "w", encoding="utf-8") as f:
+			f.write(content)
+
 	def test_load_missing_file(self):
 		# case: program runs the first time,
 		# data/ and it's files won't exist yet 
@@ -90,7 +95,24 @@ class TestLoadEvents(unittest.TestCase):
 		self.assertEqual(result, [])
 
 	def test_load_valid_file(self):
-		...
+		expected_data = [
+			{
+				"sighting": {
+					"event_id": "4be5feca1c964528a343661b336d8c09", 
+					"topic": "sighting", 
+					"payload": {
+						"text": "chants",
+						"severity": 2
+					},
+					"created_at": 1730
+				},
+				"alert": []
+			}
+		]
+
+		self._write_file(json.dumps(expected_data))
+		result = load_events(self.file_path)
+		self.assertEqual(result, expected_data)
 
 	def test_load_corrupted_file(self):
 		...
