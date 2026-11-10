@@ -167,6 +167,8 @@ class TestAppendEvents(BaseStorageTest):
 
 class TestLoadOffsets(BaseStorageTest):
 	def test_load_missing_offsets_file(self):
+		result = load_offsets(self.file_path)
+		self.assertEqual(result, {})
 
 	def test_load_valid_offsets_file(self):
 		...
