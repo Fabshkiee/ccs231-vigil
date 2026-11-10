@@ -124,7 +124,28 @@ class TestAppendEvents(BaseStorageTest):
 		self.assertEqual(self._read_file(), [event])
 
 	def test_ae_to_existing_file(self):
-		...
+		event1 = {
+			"sighting": {
+				"event_id": 12, 
+				"topic": "sighting", 
+				"payload": {},
+				"created_at": 2400
+			},
+			"alert": []
+		}
+		event2 = {
+			"sighting": {
+				"event_id": 13, 
+				"topic": "readings", 
+				"payload": {},
+				"created_at": 1000
+			},
+			"alert": []
+		}
+
+		append_event(event1, self.file_path)
+		append_event(event2, self.file_path)
+		self.assertEqual(self._read_file(), [event1, event2])
 
 	def test_ae_disk_error(self):
 		...
