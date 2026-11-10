@@ -171,7 +171,14 @@ class TestLoadOffsets(BaseStorageTest):
 		self.assertEqual(result, {})
 
 	def test_load_valid_offsets_file(self):
-		...
+		offsets = [{
+			"responseteam": {"sighting": 8, "alert": 2}, 
+			"researcharchive": {"sighting": 8, "alert": 2}
+		}]
+
+		self._write_file(json.dumps(offsets))
+		result = load_offsets(self.file_path)
+		self.assertEqual(result, offsets)
 
 	def test_load_corrupted_offsets_file(self):
 		...
