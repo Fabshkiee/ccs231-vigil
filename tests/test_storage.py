@@ -123,3 +123,9 @@ class TestAppendEvents(BaseStorageTest):
 		append_event(event, self.file_path)
 		self.assertEqual(self._read_file(), [event])
 
+	def test_ae_to_existing_file(self):
+		...
+
+	def test_ae_disk_error(self):
+		...
+	
