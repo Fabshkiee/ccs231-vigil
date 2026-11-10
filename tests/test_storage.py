@@ -76,13 +76,13 @@ class TestAtomicWrite(BaseStorageTest):
 		self._assert_no_tmp_files()
 
 class TestLoadEvents(BaseStorageTest):
-	def test_load_missing_file(self):
+	def test_load_missing_events_file(self):
 		# case: program runs the first time, data/ and it's files won't exist yet 
 		# so load_events returns an empty string as placeholder
 		result = load_events(self.file_path)
 		self.assertEqual(result, [])
 
-	def test_load_valid_file(self):
+	def test_load_valid_events_file(self):
 		expected_data = [
 			{
 				"sighting": {
@@ -102,14 +102,14 @@ class TestLoadEvents(BaseStorageTest):
 		result = load_events(self.file_path)
 		self.assertEqual(result, expected_data)
 
-	def test_load_corrupted_file(self):
+	def test_load_corrupted_events_file(self):
 		self._write_file("[{bad json content or smth]")
 		with self.assertRaises(StoreError):
 			load_events(self.file_path)
 
 class TestAppendEvents(BaseStorageTest):
 	# ae = append_event
-	def test_ae_new_file(self):
+	def test_ae_to_new_file(self):
 		event = {
 			"sighting": {
 				"event_id": 12, 
@@ -147,7 +147,7 @@ class TestAppendEvents(BaseStorageTest):
 		append_event(event2, self.file_path)
 		self.assertEqual(self._read_file(), [event1, event2])
 
-	def test_ae_disk_error(self):
+	def test_ae_when_disk_full(self):
 		event = {
 			"sighting": {
 				"event_id": 12, 
@@ -164,23 +164,22 @@ class TestAppendEvents(BaseStorageTest):
 				append_event(event, self.file_path)
 
 class TestLoadOffsets(BaseStorageTest):
-	def test_load_missing_file(self):
+	def test_load_missing_offsets_file(self):
+
+	def test_load_valid_offsets_file(self):
 		...
 
-	def test_load_valid_file(self):
-		...
-
-	def test_load_corrupted_file(self):
+	def test_load_corrupted_offsets_file(self):
 		...
 
 class TestSaveOffset(BaseStorageTest):
 	#so = save offset
-	def test_so_new_file(self):
+	def test_so_to_new_file(self):
 		...
 	
-	def test_so_existing_file(self):
+	def test_so_to_existing_file(self):
 		...
 	
-	def test_so_disk_error(self):
+	def test_so_when_disk_error(self):
 		...
 
