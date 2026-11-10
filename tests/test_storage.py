@@ -108,7 +108,8 @@ class TestLoadEvents(BaseStorageTest):
 			load_events(self.file_path)
 
 class TestAppendEvents(BaseStorageTest):
-	def test_append_event_new_file(self):
+	# ae = append_event
+	def test_ae_new_file(self):
 		event = {
 			"sighting": {
 				"event_id": 12, 
