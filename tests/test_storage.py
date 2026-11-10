@@ -193,7 +193,22 @@ class TestSaveOffset(BaseStorageTest):
 		self._assert_no_tmp_files()
 	
 	def test_so_to_existing_file(self):
-		...
+		# initialize an offset entry to test rewrite
+		initial_offset_entry = {"researcharchive": {"sighting": 8, "alert": 2}}
+		self._write_file(json.dumps(initial_offset_entry))
+
+		# save a new entry
+		save_offset("responseteam", {"sighting": 7, "alert": 1}, self.file_path) 
+		# update initial offset entry
+		save_offset("researcharchive", {"sighting": 15, "alert": 2}, self.file_path) 
+
+		expected_offsets = {
+			"researcharchive": {"sighting": 15, "alert": 2}, # try changing the values of each offset to get an error
+			"responseteam": {"sighting": 7, "alert": 1}
+		}
+
+		self.assertEqual(self._read_file(), expected_offsets, "File content does not match expected offsets")
+		self._assert_no_tmp_files()
 	
 	def test_so_when_disk_error(self):
 		...
