@@ -173,7 +173,7 @@ class TestLoadOffsets(BaseStorageTest):
 	def test_load_corrupted_file(self):
 		...
 
-class TestSaveOffsets(BaseStorageTest):
+class TestSaveOffset(BaseStorageTest):
 	#so = save offset
 	def test_so_new_file(self):
 		...
