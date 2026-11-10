@@ -4,7 +4,9 @@ import unittest
 from unittest.mock import patch
 from tempfile import TemporaryDirectory
 
-from src.common.storage import atomic_write, load_events, append_event, StoreError
+from src.common.storage import atomic_write
+from src.common.storage import append_event, save_offset
+from src.common.storage import load_events, load_offsets, StoreError
 
 class BaseStorageTest(unittest.TestCase):
 	def setUp(self):
