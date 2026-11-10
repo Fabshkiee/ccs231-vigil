@@ -83,7 +83,7 @@ def append_event(event: dict, filepath: str=EVENT_LOG_PATH):
 		events.append(event)
 		atomic_write(filepath, events)
 
-def save_offset(subscriber_id: str, offset: int, filepath: str=OFFSETS_PATH):
+def save_offset(subscriber_id: str, offset: dict, filepath: str=OFFSETS_PATH):
 	with LOG_LOCK:
 		offsets = load_offsets(filepath)
 		offsets[subscriber_id] = offset  
