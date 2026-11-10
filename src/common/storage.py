@@ -79,3 +79,9 @@ def load_offsets(filepath: str=OFFSETS_PATH) -> dict:
 		except json.JSONDecodeError as e:
 			raise StoreError(f"Corrupted offsets file at {filepath}: {e}")
 
+def save_offset(subscriber_id: str, offset: int, filepath: str=OFFSETS_PATH):
+	with LOG_LOCK:
+		offsets = load_offsets(filepath)
+		offsets[subscriber_id] = offset  
+		atomic_write(filepath, offsets)
+
