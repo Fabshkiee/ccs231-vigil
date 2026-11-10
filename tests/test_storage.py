@@ -210,6 +210,6 @@ class TestSaveOffset(BaseStorageTest):
 		self.assertEqual(self._read_file(), expected_offsets, "File content does not match expected offsets")
 		self._assert_no_tmp_files()
 	
-	def test_so_when_disk_error(self):
+	def test_so_when_disk_full(self):
 		...
 
