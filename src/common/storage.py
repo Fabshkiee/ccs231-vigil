@@ -8,6 +8,7 @@ import json
 
 LOG_LOCK = thr.RLock()
 EVENT_LOG_PATH = "data/event_log.json"
+OFFSETS_PATH = "data/offsets.json" 
 
 class StoreError(Exception):
 	"""Raised when event_log.json is corrupted"""
@@ -64,3 +65,17 @@ def append_event(event: dict, filepath: str=EVENT_LOG_PATH):
 		events = load_events(filepath)
 		events.append(event)
 		atomic_write(filepath, events)
+
+def load_offsets(filepath: str=OFFSETS_PATH) -> dict:
+	with LOG_LOCK:
+		if not os.path.exists(filepath):
+			return {}
+
+		try:
+			with open(filepath, "r", encoding="utf-8") as f:
+				data = json.load(f)
+				return data if isinstance(data, dict) else {}
+		# check if offsets.json is corrupted
+		except json.JSONDecodeError as e:
+			raise StoreError(f"Corrupted offsets file at {filepath}: {e}")
+
