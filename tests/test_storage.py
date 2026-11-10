@@ -28,12 +28,12 @@ class BaseStorageTest(unittest.TestCase):
 		with open(self.file_path, "w", encoding="utf-8") as f:
 			f.write(content)
 
-class TestAtomicWrite(BaseStorageTest):
 	def _assert_no_tmp_files(self):
 		"""Helper to test if no temporary .tmp files were left behind."""
 		tmp_files = [f for f in os.listdir(self.test_dir.name) if f.endswith(".tmp")]
 		self.assertEqual(len(tmp_files), 0, f"Lingering .tmp files found: {tmp_files}")
 
+class TestAtomicWrite(BaseStorageTest):
 	# aw = atomic_write
 	def test_aw_success(self):
 		data = [{"event_id": "1", "topic": "sighting"}]
