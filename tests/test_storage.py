@@ -163,3 +163,9 @@ class TestAppendEvents(BaseStorageTest):
 			with self.assertRaises(OSError):
 				append_event(event, self.file_path)
 
+class TestLoadOffsets(BaseStorageTest):
+	...
+
+class TestSaveOffsets(BaseStorageTest):
+	...
+
