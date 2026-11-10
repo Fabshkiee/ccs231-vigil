@@ -181,7 +181,9 @@ class TestLoadOffsets(BaseStorageTest):
 		self.assertEqual(result, offsets)
 
 	def test_load_corrupted_offsets_file(self):
-		...
+		self._write_file("[{bad json 67")
+		with self.assertRaises(StoreError):
+			load_offsets(self.file_path)
 
 class TestSaveOffset(BaseStorageTest):
 	#so = save offset
