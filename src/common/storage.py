@@ -5,6 +5,7 @@
 import threading as thr
 import os 
 import json
+from typing import Callable, TypeVar
 
 LOG_LOCK = thr.RLock()
 EVENT_LOG_PATH = "data/event_log.json"
@@ -13,6 +14,7 @@ OFFSETS_PATH = "data/offsets.json"
 class StoreError(Exception):
 	"""Raised when event_log.json is corrupted"""
 	pass
+
 
 def atomic_write(filepath: str, data: dict | list):
 	# Create the parent directories of filepath if it doesn't exist
@@ -47,37 +49,39 @@ def atomic_write(filepath: str, data: dict | list):
 			os.remove(tmp_filepath)
 		raise e # the broker handles this and replies with 503
 
-def load_events(filepath: str=EVENT_LOG_PATH) -> list:
-	with LOG_LOCK:
-		if not os.path.exists(filepath):
-			return []
+T = TypeVar('T', list, dict) # this specifies what default_factory expects
+def _load_json(filepath: str, default_factory: Callable[[], T]) -> T:
+	"""
+	Internal helper to load JSON and handle missing/corrupted files.
 
-		try:
-			with open(filepath, "r", encoding="utf-8") as f:
-				data = json.load(f)
-				return data if isinstance(data, list) else []
-		# check if event_log.json is corrupted
-		except json.JSONDecodeError as e:
-			raise StoreError(f"Corrupted log file at {filepath}: {e}")
+	Args:
+		filepath - str
+		default_factory - pass either list or dict type
+	
+	Raises:
+		StoreError - bad json (corrupted)
+	"""
+	if not os.path.exists(filepath):
+		return default_factory()
+
+	try:
+		with open(filepath, "r", encoding="utf-8") as f:
+			return json.load(f)
+	# check if the file is corrupted
+	except json.JSONDecodeError as e:
+		raise StoreError(f"Corrupted log file at {filepath}: {e}")
+
+def load_events(filepath: str=EVENT_LOG_PATH) -> list:
+	return _load_json(filepath, list)
+
+def load_offsets(filepath: str=OFFSETS_PATH) -> dict:
+	return _load_json(filepath, dict)
 
 def append_event(event: dict, filepath: str=EVENT_LOG_PATH):
 	with LOG_LOCK:
 		events = load_events(filepath)
 		events.append(event)
 		atomic_write(filepath, events)
-
-def load_offsets(filepath: str=OFFSETS_PATH) -> dict:
-	with LOG_LOCK:
-		if not os.path.exists(filepath):
-			return {}
-
-		try:
-			with open(filepath, "r", encoding="utf-8") as f:
-				data = json.load(f)
-				return data if isinstance(data, dict) else {}
-		# check if offsets.json is corrupted
-		except json.JSONDecodeError as e:
-			raise StoreError(f"Corrupted offsets file at {filepath}: {e}")
 
 def save_offset(subscriber_id: str, offset: int, filepath: str=OFFSETS_PATH):
 	with LOG_LOCK:
