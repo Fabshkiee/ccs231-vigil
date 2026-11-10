@@ -12,7 +12,7 @@ EVENT_LOG_PATH = "data/event_log.json"
 OFFSETS_PATH = "data/offsets.json" 
 
 class StoreError(Exception):
-	"""Raised when event_log.json is corrupted"""
+	"""Raised when file is corrupted"""
 	pass
 
 
