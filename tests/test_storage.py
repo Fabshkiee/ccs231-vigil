@@ -148,5 +148,18 @@ class TestAppendEvents(BaseStorageTest):
 		self.assertEqual(self._read_file(), [event1, event2])
 
 	def test_ae_disk_error(self):
-		...
-	
+		event = {
+			"sighting": {
+				"event_id": 12, 
+				"topic": "sighting", 
+				"payload": {},
+				"created_at": 2400
+			},
+			"alert": []
+		}
+
+		# mock atomic_write to simulate a failed write
+		with patch("src.common.storage.atomic_write", side_effect=OSError("Disk full")):
+			with self.assertRaises(OSError):
+				append_event(event, self.file_path)
+
