@@ -124,6 +124,7 @@ class TestAppendEvents(BaseStorageTest):
 
 		append_event(event, self.file_path)
 		self.assertEqual(self._read_file(), [event])
+		self._assert_no_tmp_files()
 
 	def test_ae_to_existing_file(self):
 		event1 = {
@@ -148,6 +149,7 @@ class TestAppendEvents(BaseStorageTest):
 		append_event(event1, self.file_path)
 		append_event(event2, self.file_path)
 		self.assertEqual(self._read_file(), [event1, event2])
+		self._assert_no_tmp_files()
 
 	def test_ae_when_disk_full(self):
 		event = {
@@ -164,6 +166,9 @@ class TestAppendEvents(BaseStorageTest):
 		with patch("src.common.storage.atomic_write", side_effect=OSError("Disk full")):
 			with self.assertRaises(OSError):
 				append_event(event, self.file_path)
+
+		# failed save means delete .tmp, it is expected to have no lingering tmp files
+		self._assert_no_tmp_files() 
 
 class TestLoadOffsets(BaseStorageTest):
 	def test_load_missing_offsets_file(self):
