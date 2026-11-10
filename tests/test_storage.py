@@ -211,5 +211,10 @@ class TestSaveOffset(BaseStorageTest):
 		self._assert_no_tmp_files()
 	
 	def test_so_when_disk_full(self):
-		...
+		with patch("src.common.storage.atomic_write", side_effect=OSError("Disk full")):
+			with self.assertRaises(OSError):
+				save_offset("responseteam", {"sighting": 7, "alert": 1}, self.file_path)
+
+		# failed save means delete .tmp, it is expected to have no lingering tmp files
+		self._assert_no_tmp_files() 
 
