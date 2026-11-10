@@ -189,7 +189,7 @@ class TestSaveOffset(BaseStorageTest):
 	#so = save offset
 	def test_so_to_new_file(self):
 		save_offset("researcharchive", {"sighting": 8, "alert": 2}, self.file_path)
-		self.assertEqual(self._read_file(), "researcharchive", {"sighting": 8, "alert": 2})
+		self.assertEqual(self._read_file(), {"researcharchive": {"sighting": 8, "alert": 2}})
 		self._assert_no_tmp_files()
 	
 	def test_so_to_existing_file(self):
