@@ -8,7 +8,7 @@ import json
 from common.constants import EVENT_LOG_FILE, OFFSETS_FILE
 from typing import Callable, TypeVar
 
-LOG_LOCK = thr.RLock()
+log_lock = thr.Lock()
 
 
 class StoreError(Exception):
@@ -81,13 +81,13 @@ def load_offsets(filepath: str=OFFSETS_FILE) -> dict:
 		return {}
 
 def append_event(event: dict, filepath: str=EVENT_LOG_FILE):
-	with LOG_LOCK:
+	with log_lock:
 		events = load_events(filepath)
 		events.setdefault(event["topic"], []).append(event)
 		atomic_write(filepath, events)
 
 def save_offset(subscriber_id: str, topic: str, index: int, filepath: str=OFFSETS_FILE):
-	with LOG_LOCK:
+	with log_lock:
 		offsets = load_offsets(filepath)
 		offsets.setdefault(subscriber_id, {})[topic] = index  
 		atomic_write(filepath, offsets)
