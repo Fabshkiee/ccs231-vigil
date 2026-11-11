@@ -71,8 +71,8 @@ def _load_json(filepath: str, default_factory: Callable[[], T]) -> T:
 	except json.JSONDecodeError as e:
 		raise StoreError(f"Corrupted log file at {filepath}: {e}")
 
-def load_events(filepath: str=EVENT_LOG_PATH) -> list:
-	return _load_json(filepath, list)
+def load_events(filepath: str=EVENT_LOG_PATH) -> dict:
+	return _load_json(filepath, dict)
 
 def load_offsets(filepath: str=OFFSETS_PATH) -> dict:
 	return _load_json(filepath, dict)
@@ -80,7 +80,7 @@ def load_offsets(filepath: str=OFFSETS_PATH) -> dict:
 def append_event(event: dict, filepath: str=EVENT_LOG_PATH):
 	with LOG_LOCK:
 		events = load_events(filepath)
-		events.append(event)
+		events.setdefault(event["topic"], []).append(event)
 		atomic_write(filepath, events)
 
 def save_offset(subscriber_id: str, offset: dict, filepath: str=OFFSETS_PATH):

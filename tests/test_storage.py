@@ -79,26 +79,26 @@ class TestAtomicWrite(BaseStorageTest):
 
 class TestLoadEvents(BaseStorageTest):
 	def test_load_missing_events_file(self):
-		# case: program runs the first time, data/ and it's files won't exist yet 
-		# so load_events returns an empty string as placeholder
+		# case: program runs the first time, data/ and its files won't exist yet
+		# so load_events returns an empty dict
 		result = load_events(self.file_path)
-		self.assertEqual(result, [])
+		self.assertEqual(result, {})
 
 	def test_load_valid_events_file(self):
-		expected_data = [
-			{
-				"sighting": {
-					"event_id": "4be5feca1c964528a343661b336d8c09", 
-					"topic": "sighting", 
+		expected_data = {
+			"sighting": [
+				{
+					"event_id": "4be5feca1c964528a343661b336d8c09",
+					"topic": "sighting",
 					"payload": {
 						"text": "chants",
 						"severity": 2
 					},
 					"created_at": 1730
-				},
-				"alert": []
-			}
-		]
+				}
+			],
+			"alert": []
+		}
 
 		self._write_file(json.dumps(expected_data))
 		result = load_events(self.file_path)
@@ -113,53 +113,41 @@ class TestAppendEvents(BaseStorageTest):
 	# ae = append_event
 	def test_ae_to_new_file(self):
 		event = {
-			"sighting": {
-				"event_id": 12, 
-				"topic": "sighting", 
-				"payload": {},
-				"created_at": 2400
-			},
-			"alert": []
+			"event_id": "12",
+			"topic": "sighting",
+			"payload": {},
+			"created_at": 2400
 		}
 
 		append_event(event, self.file_path)
-		self.assertEqual(self._read_file(), [event])
+		self.assertEqual(self._read_file(), {"sighting": [event]})
 		self._assert_no_tmp_files()
 
 	def test_ae_to_existing_file(self):
 		event1 = {
-			"sighting": {
-				"event_id": 12, 
-				"topic": "sighting", 
-				"payload": {},
-				"created_at": 2400
-			},
-			"alert": []
+			"event_id": "12",
+			"topic": "sighting",
+			"payload": {},
+			"created_at": 2400
 		}
 		event2 = {
-			"sighting": {
-				"event_id": 13, 
-				"topic": "readings", 
-				"payload": {},
-				"created_at": 1000
-			},
-			"alert": []
+			"event_id": "13",
+			"topic": "readings",
+			"payload": {},
+			"created_at": 1000
 		}
 
 		append_event(event1, self.file_path)
 		append_event(event2, self.file_path)
-		self.assertEqual(self._read_file(), [event1, event2])
+		self.assertEqual(self._read_file(), {"sighting": [event1], "readings": [event2]})
 		self._assert_no_tmp_files()
 
 	def test_ae_when_disk_full(self):
 		event = {
-			"sighting": {
-				"event_id": 12, 
-				"topic": "sighting", 
-				"payload": {},
-				"created_at": 2400
-			},
-			"alert": []
+			"event_id": "12",
+			"topic": "sighting",
+			"payload": {},
+			"created_at": 2400
 		}
 
 		# mock atomic_write to simulate a failed write
