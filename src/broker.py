@@ -10,7 +10,8 @@ import common.log as logger
 
 BROKER_HOST = "localhost" # change to "0.0.0.0" if receiving external network instead
 
-def handle_client(conn: sck.socket, addr):
+
+def handle_client(client: sck.socket, addr):
 	logger.info("broker", f"new connection from {addr}")
 		
 def start_broker():
@@ -24,12 +25,12 @@ def start_broker():
 		try:
 			while True:
 				try:
-					conn, addr = server.accept()
+					client, addr = server.accept()
 				except TimeoutError:
 					continue
 
 				# offload current client to accept next client
-				thr.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
+				thr.Thread(target=handle_client, args=(client, addr), daemon=True).start()
 				logger.info("broker", f"Connected clients: {thr.active_count() - 1}")
 		except KeyboardInterrupt:
 			logger.info("broker", "Shutting down..")
