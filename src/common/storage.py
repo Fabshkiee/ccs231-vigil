@@ -75,7 +75,10 @@ def load_events(filepath: str=EVENT_LOG_PATH) -> dict:
 	return _load_json(filepath, dict)
 
 def load_offsets(filepath: str=OFFSETS_PATH) -> dict:
-	return _load_json(filepath, dict)
+	try:
+		return _load_json(filepath, dict)
+	except StoreError:
+		return {}
 
 def append_event(event: dict, filepath: str=EVENT_LOG_PATH):
 	with LOG_LOCK:
