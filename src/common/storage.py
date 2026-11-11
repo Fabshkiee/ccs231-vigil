@@ -5,11 +5,11 @@
 import threading as thr
 import os 
 import json
+from common.constants import EVENT_LOG_FILE, OFFSETS_FILE
 from typing import Callable, TypeVar
 
 LOG_LOCK = thr.RLock()
-EVENT_LOG_PATH = "data/event_log.json"
-OFFSETS_PATH = "data/offsets.json" 
+
 
 class StoreError(Exception):
 	"""Raised when file is corrupted"""
@@ -71,22 +71,22 @@ def _load_json(filepath: str, default_factory: Callable[[], T]) -> T:
 	except json.JSONDecodeError as e:
 		raise StoreError(f"Corrupted log file at {filepath}: {e}")
 
-def load_events(filepath: str=EVENT_LOG_PATH) -> dict:
+def load_events(filepath: str=EVENT_LOG_FILE) -> dict:
 	return _load_json(filepath, dict)
 
-def load_offsets(filepath: str=OFFSETS_PATH) -> dict:
+def load_offsets(filepath: str=OFFSETS_FILE) -> dict:
 	try:
 		return _load_json(filepath, dict)
 	except StoreError:
 		return {}
 
-def append_event(event: dict, filepath: str=EVENT_LOG_PATH):
+def append_event(event: dict, filepath: str=EVENT_LOG_FILE):
 	with LOG_LOCK:
 		events = load_events(filepath)
 		events.setdefault(event["topic"], []).append(event)
 		atomic_write(filepath, events)
 
-def save_offset(subscriber_id: str, offset: dict, filepath: str=OFFSETS_PATH):
+def save_offset(subscriber_id: str, offset: dict, filepath: str=OFFSETS_FILE):
 	with LOG_LOCK:
 		offsets = load_offsets(filepath)
 		offsets[subscriber_id] = offset  

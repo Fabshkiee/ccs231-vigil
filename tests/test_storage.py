@@ -1,12 +1,11 @@
 import json
-import os
-import unittest
+import os, sys, unittest
 from unittest.mock import patch
 from tempfile import TemporaryDirectory
 
-from src.common.storage import atomic_write
-from src.common.storage import append_event, save_offset
-from src.common.storage import load_events, load_offsets, StoreError
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+from common.storage import (atomic_write, append_event, save_offset,
+                            load_events, load_offsets, StoreError)
 
 class BaseStorageTest(unittest.TestCase):
 	def setUp(self):
@@ -151,7 +150,7 @@ class TestAppendEvents(BaseStorageTest):
 		}
 
 		# mock atomic_write to simulate a failed write
-		with patch("src.common.storage.atomic_write", side_effect=OSError("Disk full")):
+		with patch("common.storage.atomic_write", side_effect=OSError("Disk full")):
 			with self.assertRaises(OSError):
 				append_event(event, self.file_path)
 
@@ -164,19 +163,19 @@ class TestLoadOffsets(BaseStorageTest):
 		self.assertEqual(result, {})
 
 	def test_load_valid_offsets_file(self):
-		offsets = [{
-			"responseteam": {"sighting": 8, "alert": 2}, 
+		offsets = {
+			"responseteam": {"sighting": 8, "alert": 2},
 			"researcharchive": {"sighting": 8, "alert": 2}
-		}]
+		}
 
 		self._write_file(json.dumps(offsets))
 		result = load_offsets(self.file_path)
 		self.assertEqual(result, offsets)
 
 	def test_load_corrupted_offsets_file(self):
+		# a torn offsets file must not stop the broker: replay from zero
 		self._write_file("[{bad json 67")
-		with self.assertRaises(StoreError):
-			load_offsets(self.file_path)
+		self.assertEqual(load_offsets(self.file_path), {})
 
 class TestSaveOffset(BaseStorageTest):
 	#so = save offset
@@ -204,7 +203,7 @@ class TestSaveOffset(BaseStorageTest):
 		self._assert_no_tmp_files()
 	
 	def test_so_when_disk_full(self):
-		with patch("src.common.storage.atomic_write", side_effect=OSError("Disk full")):
+		with patch("common.storage.atomic_write", side_effect=OSError("Disk full")):
 			with self.assertRaises(OSError):
 				save_offset("responseteam", {"sighting": 7, "alert": 1}, self.file_path)
 
