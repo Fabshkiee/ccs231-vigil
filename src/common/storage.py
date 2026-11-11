@@ -86,9 +86,9 @@ def append_event(event: dict, filepath: str=EVENT_LOG_FILE):
 		events.setdefault(event["topic"], []).append(event)
 		atomic_write(filepath, events)
 
-def save_offset(subscriber_id: str, offset: dict, filepath: str=OFFSETS_FILE):
+def save_offset(subscriber_id: str, topic: str, index: int, filepath: str=OFFSETS_FILE):
 	with LOG_LOCK:
 		offsets = load_offsets(filepath)
-		offsets[subscriber_id] = offset  
+		offsets.setdefault(subscriber_id, {})[topic] = index  
 		atomic_write(filepath, offsets)
 

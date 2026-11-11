@@ -180,22 +180,24 @@ class TestLoadOffsets(BaseStorageTest):
 class TestSaveOffset(BaseStorageTest):
 	#so = save offset
 	def test_so_to_new_file(self):
-		save_offset("researcharchive", {"sighting": 8, "alert": 2}, self.file_path)
+		save_offset("researcharchive", "sighting", 8, self.file_path)
+		save_offset("researcharchive", "alert", 2, self.file_path)
 		self.assertEqual(self._read_file(), {"researcharchive": {"sighting": 8, "alert": 2}})
 		self._assert_no_tmp_files()
-	
+
 	def test_so_to_existing_file(self):
 		# initialize an offset entry to test rewrite
 		initial_offset_entry = {"researcharchive": {"sighting": 8, "alert": 2}}
 		self._write_file(json.dumps(initial_offset_entry))
 
 		# save a new entry
-		save_offset("responseteam", {"sighting": 7, "alert": 1}, self.file_path) 
-		# update initial offset entry
-		save_offset("researcharchive", {"sighting": 15, "alert": 2}, self.file_path) 
+		save_offset("responseteam", "sighting", 7, self.file_path)
+		save_offset("responseteam", "alert", 1, self.file_path)
+		# advance one topic only -- the sibling `alert` offset must survive
+		save_offset("researcharchive", "sighting", 15, self.file_path)
 
 		expected_offsets = {
-			"researcharchive": {"sighting": 15, "alert": 2}, # try changing the values of each offset to get an error
+			"researcharchive": {"sighting": 15, "alert": 2},
 			"responseteam": {"sighting": 7, "alert": 1}
 		}
 
@@ -205,7 +207,7 @@ class TestSaveOffset(BaseStorageTest):
 	def test_so_when_disk_full(self):
 		with patch("common.storage.atomic_write", side_effect=OSError("Disk full")):
 			with self.assertRaises(OSError):
-				save_offset("responseteam", {"sighting": 7, "alert": 1}, self.file_path)
+				save_offset("responseteam", "sighting", 7, self.file_path)
 
 		# failed save means delete .tmp, it is expected to have no lingering tmp files
 		self._assert_no_tmp_files() 
