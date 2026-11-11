@@ -1,0 +1,3 @@
+# Imports are `from common.storage import ...`; the tests add src/ to sys.path at runtime.
+# This tells the type checker where that root is so it stops flagging the import.
+search-path = ["src"]
