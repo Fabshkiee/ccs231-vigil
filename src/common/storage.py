@@ -24,9 +24,11 @@ def atomic_write(filepath: str, data: dict | list):
 
 	tmp_filepath = f"{filepath}.tmp"
 
+	blob = json.dumps(data) #fails if disk is full
+
 	try:
 		with open(tmp_filepath, 'w', encoding='utf-8') as f:
-			f.write(json.dumps(data))
+			f.write(blob)
 			f.flush()
 
 			os.fsync(f.fileno())
@@ -44,10 +46,10 @@ def atomic_write(filepath: str, data: dict | list):
 			except OSError:
 				pass
 			
-	except OSError as e:
+	except OSError:
 		if os.path.exists(tmp_filepath):
 			os.remove(tmp_filepath)
-		raise e # the broker handles this and replies with 503
+		raise
 
 T = TypeVar('T', list, dict) # this specifies what default_factory expects
 def _load_json(filepath: str, default_factory: Callable[[], T]) -> T:
