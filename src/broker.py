@@ -50,15 +50,8 @@ def _encode_msg(msg: str) -> bytes:
 	return msg.encode("utf-8")
 
 def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
-	new_event = {
-		"event_id": id.new_event_id(),
-		"topic": topic,
-		"payload": payload,
-		"created_at": t.time()
-	}
-
 	try:
-		storage.append_event(new_event)
+		storage.append_event(payload)
 	except Exception as e:
 		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)))
 		client.sendall(err_msg)
@@ -70,11 +63,11 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 
 	# track empty sockets
 	dead_subscribers: list[sck.socket] = []
-	msg: str = prot.format_event(new_event)
+	msg: str = prot.format_event(payload)
 	for subscriber, sub_id in subscriptions_copy:
 		try:
 			subscriber.sendall(_encode_msg(msg))
-			logger.info("broker", f"sent {new_event["topic"]} | {new_event["event_id"]}")
+			logger.info("broker", f"sent {payload["topic"]} | {payload["event_id"]}")
 		except Exception:
 			logger.warn("broker", f"{sub_id} is unresponsive")
 			logger.info("broker", f"dropped {sub_id} from {topic}")
@@ -84,7 +77,7 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 		_drop_dead_sockets(dead_subscribers)
 
 	# reply pub_ack with event_id
-	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(new_event["event_id"]))
+	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(payload["event_id"]))
 	client.sendall(pub_ack_msg)
 
 def _handle_sub(client: sck.socket, topic: str, sub_id: str):
