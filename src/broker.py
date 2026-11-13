@@ -36,7 +36,7 @@ def handle_client(client: sck.socket, addr):
 	try:
 		with client, client.makefile("r", encoding="utf-8") as client_file:
 			while True:
-				line = client_file.readline()
+				line = client_file.readline(consts.MAX_LINE_BYTES)
 				if not line:
 					logger.info("broker", f"connection closed by {addr}")
 					break
