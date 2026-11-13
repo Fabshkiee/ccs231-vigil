@@ -4,19 +4,63 @@
 # hold a lock while sending — copy what you need, let go, then send.
 import socket as sck
 import threading as thr
+import time as t
 
 import common.constants as consts
 import common.log as logger
 import common.protocol as prot
+import common.storage as storage
+import common.ids as id
 
 BROKER_HOST = "localhost" # change to "0.0.0.0" if receiving external network instead
 sub_lock = thr.RLock()
 send_lock = thr.RLock()
-subscriptions: dict[str, list[tuple]] = {}
-clients: dict = {}
+subscriptions: dict[str, list[tuple]] = {} # topic -> [(client, sub_id)]
+clients: dict[sck.socket, str] = {} # client -> sub_id
 
-def _handle_pub(client: sck.socket, topic: str, payload: dict):
-	raise NotImplementedError("PUB handler not yet implemented")
+def _encode_msg(msg: str) -> bytes:
+	return msg.encode("utf-8")
+
+def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
+	new_event = {
+		"event_id": id.new_event_id(),
+		"topic": topic,
+		"payload": payload,
+		"created_at": t.time()
+	}
+
+	try:
+		storage.append_event(new_event)
+	except Exception as e:
+		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)))
+		client.sendall(err_msg)
+		return
+
+	# save successful: copy current subscription list before operation
+	with sub_lock:
+		subscriptions_copy = subscriptions.get(topic, []).copy()
+
+	# track empty sockets
+	dead_clients: list[sck.socket] = []
+	msg: str = prot.format_event(new_event)
+	for client, sub_id in subscriptions_copy:
+		try:
+			client.sendall(_encode_msg(msg))
+			logger.info("broker", f"sent {new_event["topic"]} | {new_event["event_id"]}")
+		except Exception:
+			logger.warn("broker", f"{sub_id} is unresponsive")
+			logger.info("broker", f"dropped {sub_id} from {topic}")
+			dead_clients.append(client)
+
+	# drop empty sockets
+	if dead_clients:
+		with sub_lock:
+			subscriptions[topic] = [ (c, s_id) for c, s_id in subscriptions[topic] if c not in dead_clients ]
+			logger.info("broker", f"dropped {dead_clients.count} dead sockets")
+
+	# reply pub_ack with event_id
+	ack_msg: bytes = _encode_msg(prot.format_pub_ack(new_event["event_id"]))
+	client.sendall(ack_msg)
 
 def _handle_sub(client: sck.socket, topic: str, sub_id: str):
 	raise NotImplementedError("SUB handler not yet implemented")
