@@ -2,7 +2,6 @@ import socket as sck
 import threading as thr
 import time as t
 import unittest as ut
-from unittest.mock import patch
 import os, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -46,4 +45,24 @@ class TestBrokerConnection(ut.TestCase):
 		ip, port = self.pub_sock.getpeername()
 		self.assertEqual(port, consts.PORT, f"{[port]} is not {consts.PORT}")
 
+	def test_broker_save_event_and_returns_pub_ack(self):
+		pub_payload = {
+			"event_id": id.new_event_id(), 
+			"topic": "sightings", 
+			"payload": {"text": "chants", "severity": 2}, 
+			"created_at": t.time()
+		}
+		pub_line = prot.format_pub("sightings", pub_payload) + "\n"
+		self.pub_sock.sendall(pub_line.encode("utf-8"))
 
+		response = self.pub_file.readline().strip()
+
+		# assert 1: broker replied with pub_ack
+		self.assertIn(prot.format_pub_ack(pub_payload["event_id"]), response)
+		# assert 2: verify event_log.json was written
+		with open(consts.EVENT_LOG_FILE, "r", encoding="utf-8") as log_f:
+			contents = log_f.read()
+		self.assertIn("sightings", contents)
+
+if __name__ == "__main__":
+	ut.main()
