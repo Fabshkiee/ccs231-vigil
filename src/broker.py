@@ -148,8 +148,14 @@ def start_broker():
 					continue
 
 				# offload current client to accept next client
-				thr.Thread(target=handle_client, args=(client, addr), daemon=True).start()
-				logger.info("broker", f"Connected clients: {thr.active_count() - 1}")
+				thr.Thread(
+					target=handle_client, 
+					args=(client, addr),
+					name=f"client-{addr[1]}", 
+					daemon=True
+				).start()
+				active_clients = sum(1 for t in thr.enumerate() if t.name.startswith("client-"))
+				logger.info("broker", f"Connected clients: {active_clients}")
 		except KeyboardInterrupt:
 			logger.info("broker", "Shutting down..")
 	logger.info("broker", "Socket closed.")
