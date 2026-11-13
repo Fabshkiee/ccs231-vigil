@@ -15,10 +15,10 @@ SEND_LOCK = thr.RLock()
 SUBSCRIPTIONS: dict[str, list[tuple]] = {}
 CLIENTS: dict = {}
 
-def _handle_pub(client: sck.socket, topic: str, sub_id: str):
+def _handle_pub(client: sck.socket, topic: str, payload: dict):
 	raise NotImplementedError("PUB handler not yet implemented")
 
-def _handle_sub(client: sck.socket, topic: str, payload: dict):
+def _handle_sub(client: sck.socket, topic: str, sub_id: str):
 	raise NotImplementedError("SUB handler not yet implemented")
 
 def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str):
@@ -52,8 +52,8 @@ def handle_client(client: sck.socket, addr):
 				command: str = result.cmd
 				fields: dict = result.fields
 				match command:
-					case "PUB": _handle_pub(client, fields["topic"], fields["sub_id"])
-					case "SUB": _handle_sub(client, fields["topic"], fields["payload"])
+					case "PUB": _handle_pub(client, fields["topic"], fields["payload"])
+					case "SUB": _handle_sub(client, fields["topic"], fields["sub_id"])
 					case "ACK": _handle_ack(client, fields["topic"], fields["sub_id"], fields["event_id"])
 					case "GET_STATS": _handle_get_stats(client, fields["topic"])
 					case _: _handle_no_command(command)
