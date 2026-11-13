@@ -52,14 +52,28 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 			logger.info("broker", f"dropped {sub_id} from {topic}")
 			dead_subscribers.append(subscriber)
 
-	# drop empty sockets
+	# drop dead sockets
 	if dead_subscribers:
 		dead_set =  set(dead_subscribers)	# faster O(1) lookup inside the comprehension
 		with sub_lock:
-			subscriptions[topic] = [ 
-				(sub, sub_id) for sub, sub_id in subscriptions.get(topic, []) if sub not in dead_set 
-			]
-			logger.info("broker", f"dropped {len(dead_subscribers)} dead sockets")
+			# remove dead sockets from all subscribed topics
+			for topic_name in list(subscriptions.keys()):
+				subscriptions[topic_name] = [
+					(sub, s_id) for sub, s_id in subscriptions[topic_name] if sub not in dead_set
+				]
+
+			# remove dead sockets in clients as well
+			for dead_sub in dead_set:
+				clients.pop(dead_sub, None)
+
+		# close dead sockets
+		for dead_sub in dead_set:
+			try:
+				dead_sub.close()
+			except OSError:
+				pass
+		
+		logger.info("broker", f"dropped {len(dead_subscribers)} dead sockets")
 
 	# reply pub_ack with event_id
 	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(new_event["event_id"]))
