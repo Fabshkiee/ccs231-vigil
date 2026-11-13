@@ -5,6 +5,7 @@
 import socket as sck
 import threading as thr
 import time as t
+from collections.abc import Iterable
 
 import common.constants as consts
 import common.log as logger
@@ -12,11 +13,38 @@ import common.protocol as prot
 import common.storage as storage
 import common.ids as id
 
+
 BROKER_HOST = "localhost" # change to "0.0.0.0" if receiving external network instead
 sub_lock = thr.RLock()
 send_lock = thr.RLock()
 subscriptions: dict[str, list[tuple]] = {} # topic -> [(client, sub_id)]
 clients: dict[sck.socket, str] = {} # client -> sub_id
+
+
+def _drop_dead_sockets(dead_sockets: Iterable[sck.socket]) -> None:
+	dead_set = set(dead_sockets)
+	if not dead_set:
+		return
+
+	with sub_lock:
+		# remove dead sockets from all subscribed topics
+		for topic_name in list(subscriptions.keys()):
+			subscriptions[topic_name] = [
+				(sub, s_id) for sub, s_id in subscriptions[topic_name] if sub not in dead_set
+			]
+
+		# remove dead sockets in clients as well
+		for dead_sub in dead_set:
+			clients.pop(dead_sub, None)
+
+	# close dead sockets (outside the lock so I/O it doesn't block other threads)
+	for dead_sub in dead_set:
+		try:
+			dead_sub.close()
+		except OSError:
+			pass
+	
+	logger.info("broker", f"dropped {len(dead_set)} dead sockets")
 
 def _encode_msg(msg: str) -> bytes:
 	return msg.encode("utf-8")
@@ -52,28 +80,8 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 			logger.info("broker", f"dropped {sub_id} from {topic}")
 			dead_subscribers.append(subscriber)
 
-	# drop dead sockets
 	if dead_subscribers:
-		dead_set =  set(dead_subscribers)	# faster O(1) lookup inside the comprehension
-		with sub_lock:
-			# remove dead sockets from all subscribed topics
-			for topic_name in list(subscriptions.keys()):
-				subscriptions[topic_name] = [
-					(sub, s_id) for sub, s_id in subscriptions[topic_name] if sub not in dead_set
-				]
-
-			# remove dead sockets in clients as well
-			for dead_sub in dead_set:
-				clients.pop(dead_sub, None)
-
-		# close dead sockets
-		for dead_sub in dead_set:
-			try:
-				dead_sub.close()
-			except OSError:
-				pass
-		
-		logger.info("broker", f"dropped {len(dead_subscribers)} dead sockets")
+		_drop_dead_sockets(dead_subscribers)
 
 	# reply pub_ack with event_id
 	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(new_event["event_id"]))
@@ -118,16 +126,10 @@ def handle_client(client: sck.socket, addr):
 					case "ACK": _handle_ack(client, fields["topic"], fields["sub_id"], fields["event_id"])
 					case "GET_STATS": _handle_get_stats(client, fields["topic"])
 					case _: _handle_no_command(command)
-
-	except Exception as e:
+	except (ConnectionError, OSError) as e:
 		logger.warn("broker", str(e))
 	finally:
-		with sub_lock:
-			for topic_key in list(subscriptions.keys()):
-				# rebuild the list of subcribers of this particular topic without the disconnected client
-				subscriptions[topic_key] = [ (c, s_id) for c, s_id in subscriptions[topic_key] if c != client]
-			clients.pop(client, None)
-		client.close()
+		_drop_dead_sockets([client])
 		logger.info("broker", f"{addr} disconnected")
 					
 def start_broker():
