@@ -54,8 +54,11 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 
 	# drop empty sockets
 	if dead_subscribers:
+		dead_set =  set(dead_subscribers)	# faster O(1) lookup inside the comprehension
 		with sub_lock:
-			subscriptions[topic] = [ (sub, sub_id) for sub, sub_id in subscriptions[topic] if sub not in dead_subscribers ]
+			subscriptions[topic] = [ 
+				(sub, sub_id) for sub, sub_id in subscriptions.get(topic, []) if sub not in dead_set 
+			]
 			logger.info("broker", f"dropped {len(dead_subscribers)} dead sockets")
 
 	# reply pub_ack with event_id
