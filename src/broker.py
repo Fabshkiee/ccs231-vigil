@@ -53,7 +53,7 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 	try:
 		storage.append_event(payload)
 	except Exception as e:
-		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)))
+		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
 		client.sendall(err_msg)
 		return
 
@@ -63,7 +63,7 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 
 	# track empty sockets
 	dead_subscribers: list[sck.socket] = []
-	event_msg: str = prot.format_event(payload)
+	event_msg: str = prot.format_event(payload) + "\n"
 	for subscriber, sub_id in subscriptions_copy:
 		try:
 			subscriber.sendall(_encode_msg(event_msg))
