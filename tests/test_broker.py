@@ -24,6 +24,16 @@ class TestBrokerConnection(ut.TestCase):
 		cls.server_thread.start()
 		t.sleep(0.1)
 
+		cls.pub_sock = sck.socket(sck.AF_INET, sck.SOCK_STREAM)
+		cls.pub_sock.settimeout(2.0)
+		cls.pub_sock.connect(ADDRESS)
+		cls.pub_file = cls.pub_sock.makefile("r", encoding="utf-8")
+
+	@classmethod
+	def tearDownClass(cls):
+		cls.pub_file.close()
+		cls.pub_sock.close()
+
 	def tearDown(self) -> None:
 		t.sleep(0.65)
 
@@ -32,10 +42,10 @@ class TestBrokerConnection(ut.TestCase):
 			broker.subscriptions.clear()
 			broker.clients.clear()
 
-	def test_publisher_can_connect(self):
-		pub_sock = sck.socket(sck.AF_INET, sck.SOCK_STREAM)
-		pub_sock.settimeout(2.0)
-		
+	def test_publisher_can_connect(self):		
+		ip, port = self.pub_sock.getpeername()
+		self.assertEqual(port, consts.PORT, f"{[port]} is not {consts.PORT}")
+
 		try:
 			pub_sock.connect(ADDRESS)
 			ip, port = pub_sock.getpeername()
