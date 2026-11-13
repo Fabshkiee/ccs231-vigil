@@ -55,8 +55,8 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 	# drop empty sockets
 	if dead_subscribers:
 		with sub_lock:
-			logger.info("broker", f"dropped {dead_clients.count} dead sockets")
 			subscriptions[topic] = [ (sub, sub_id) for sub, sub_id in subscriptions[topic] if sub not in dead_subscribers ]
+			logger.info("broker", f"dropped {len(dead_subscribers)} dead sockets")
 
 	# reply pub_ack with event_id
 	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(new_event["event_id"]))
