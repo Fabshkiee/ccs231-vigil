@@ -32,3 +32,14 @@ class TestBrokerConnection(ut.TestCase):
 			broker.subscriptions.clear()
 			broker.clients.clear()
 
+	def test_publisher_can_connect(self):
+		pub_sock = sck.socket(sck.AF_INET, sck.SOCK_STREAM)
+		pub_sock.settimeout(2.0)
+		
+		try:
+			pub_sock.connect(ADDRESS)
+			ip, port = pub_sock.getpeername()
+			self.assertEqual(port, consts.PORT, f"{[port]} is not {consts.PORT}")
+		finally:
+			pub_sock.close()
+
