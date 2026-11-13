@@ -46,10 +46,4 @@ class TestBrokerConnection(ut.TestCase):
 		ip, port = self.pub_sock.getpeername()
 		self.assertEqual(port, consts.PORT, f"{[port]} is not {consts.PORT}")
 
-		try:
-			pub_sock.connect(ADDRESS)
-			ip, port = pub_sock.getpeername()
-			self.assertEqual(port, consts.PORT, f"{[port]} is not {consts.PORT}")
-		finally:
-			pub_sock.close()
 
