@@ -41,19 +41,19 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 		subscriptions_copy = subscriptions.get(topic, []).copy()
 
 	# track empty sockets
-	dead_clients: list[sck.socket] = []
+	dead_subscribers: list[sck.socket] = []
 	msg: str = prot.format_event(new_event)
-	for client, sub_id in subscriptions_copy:
+	for subscriber, sub_id in subscriptions_copy:
 		try:
-			client.sendall(_encode_msg(msg))
+			subscriber.sendall(_encode_msg(msg))
 			logger.info("broker", f"sent {new_event["topic"]} | {new_event["event_id"]}")
 		except Exception:
 			logger.warn("broker", f"{sub_id} is unresponsive")
 			logger.info("broker", f"dropped {sub_id} from {topic}")
-			dead_clients.append(client)
+			dead_subscribers.append(subscriber)
 
 	# drop empty sockets
-	if dead_clients:
+	if dead_subscribers:
 		with sub_lock:
 			subscriptions[topic] = [ (c, s_id) for c, s_id in subscriptions[topic] if c not in dead_clients ]
 			logger.info("broker", f"dropped {dead_clients.count} dead sockets")
