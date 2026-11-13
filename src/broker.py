@@ -65,9 +65,9 @@ def handle_client(client: sck.socket, addr):
 			for topic_key in list(SUBSCRIPTIONS.keys()):
 				# rebuild the list of subcribers of this particular topic without the disconnected client
 				SUBSCRIPTIONS[topic_key] = [ (c, s_id) for c, s_id in SUBSCRIPTIONS[topic_key] if c != client]
-				CLIENTS.pop(client, None)
-				client.close()
-				logger.info("broker", f"{addr} disconnected")
+			CLIENTS.pop(client, None)
+		client.close()
+		logger.info("broker", f"{addr} disconnected")
 					
 def start_broker():
 	with sck.socket(sck.AF_INET, sck.SOCK_STREAM) as server:
