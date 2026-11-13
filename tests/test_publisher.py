@@ -1,8 +1,8 @@
-import os, sys, unittest
+import os, sys, unittest, contextlib, io
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from publisher import parse_typed_line, needs_alert
+from publisher import parse_typed_line, needs_alert, parse_args
 
 
 class ParseTypedLineTests(unittest.TestCase):
@@ -44,8 +44,8 @@ class ParseTypedLineTests(unittest.TestCase):
 
 
 class NeedsAlertTests(unittest.TestCase):
-    """verify that only sev 4 and 5 trigger the secondary alert"""
     def test_threshold(self):
+        """verify that only sev 4 and 5 trigger the secondary alert"""
         # no alerts needed
         self.assertFalse(needs_alert("SightingReports", 3))
         # triggers alert
@@ -56,6 +56,20 @@ class NeedsAlertTests(unittest.TestCase):
         """verify background sensors don't trigger alerts"""
         self.assertFalse(needs_alert("ParanormalReadings", 5))
 
+
+class ParseArgsTests(unittest.TestCase):
+    def test_valid_role(self):
+        """follow --as <role> format"""
+        args = parse_args(["--as", "SightingReports"])
+        self.assertEqual(args.role, "SightingReports")
+
+    def test_unknown_role_exits(self):
+        """verify successful syst exits on invalid roles"""
+        # argparse raises SystemExit, assertRaises catches it to prevent test run kill
+        # redirect hides usage text for clean output
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                parse_args(["--as", "Nobody"])
 
 if __name__ == "__main__":
     unittest.main()
