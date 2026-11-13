@@ -112,7 +112,7 @@ def handle_client(client: sck.socket, addr):
 				
 				result = prot.parse_line(line)
 				if isinstance(result, prot.Err):
-					logger.warn(f"broker", "error parsing line from {addr}: {result.reason}", line)
+					logger.warn("broker", f"error parsing line from {addr}: {result.reason}", line)
 					if result.close:
 						break
 					continue
