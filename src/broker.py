@@ -63,10 +63,10 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 
 	# track empty sockets
 	dead_subscribers: list[sck.socket] = []
-	msg: str = prot.format_event(payload)
+	event_msg: str = prot.format_event(payload)
 	for subscriber, sub_id in subscriptions_copy:
 		try:
-			subscriber.sendall(_encode_msg(msg))
+			subscriber.sendall(_encode_msg(event_msg))
 			logger.info("broker", f"sent {payload["topic"]} | {payload["event_id"]}")
 		except Exception:
 			logger.warn("broker", f"{sub_id} is unresponsive")
