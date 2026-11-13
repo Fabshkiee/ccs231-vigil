@@ -77,7 +77,7 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 		_drop_dead_sockets(dead_subscribers)
 
 	# reply pub_ack with event_id
-	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(payload["event_id"]))
+	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(payload["event_id"]) + "\n")
 	client.sendall(pub_ack_msg)
 
 def _handle_sub(client: sck.socket, topic: str, sub_id: str):
