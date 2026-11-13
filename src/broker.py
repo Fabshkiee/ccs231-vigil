@@ -59,7 +59,7 @@ def handle_client(client: sck.socket, addr):
 					case _: _handle_no_command(command)
 
 	except Exception as e:
-		logger.warn("broker", e)
+		logger.warn("broker", str(e))
 	finally:
 		with SUB_LOCK:
 			for topic_key in list(SUBSCRIPTIONS.keys()):
