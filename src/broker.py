@@ -55,12 +55,12 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 	# drop empty sockets
 	if dead_subscribers:
 		with sub_lock:
-			subscriptions[topic] = [ (c, s_id) for c, s_id in subscriptions[topic] if c not in dead_clients ]
 			logger.info("broker", f"dropped {dead_clients.count} dead sockets")
+			subscriptions[topic] = [ (sub, sub_id) for sub, sub_id in subscriptions[topic] if sub not in dead_subscribers ]
 
 	# reply pub_ack with event_id
-	ack_msg: bytes = _encode_msg(prot.format_pub_ack(new_event["event_id"]))
-	client.sendall(ack_msg)
+	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(new_event["event_id"]))
+	client.sendall(pub_ack_msg)
 
 def _handle_sub(client: sck.socket, topic: str, sub_id: str):
 	raise NotImplementedError("SUB handler not yet implemented")
