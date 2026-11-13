@@ -10,10 +10,10 @@ import common.log as logger
 import common.protocol as prot
 
 BROKER_HOST = "localhost" # change to "0.0.0.0" if receiving external network instead
-SUB_LOCK = thr.RLock()
-SEND_LOCK = thr.RLock()
-SUBSCRIPTIONS: dict[str, list[tuple]] = {}
-CLIENTS: dict = {}
+sub_lock = thr.RLock()
+send_lock = thr.RLock()
+subscriptions: dict[str, list[tuple]] = {}
+clients: dict = {}
 
 def _handle_pub(client: sck.socket, topic: str, payload: dict):
 	raise NotImplementedError("PUB handler not yet implemented")
@@ -61,11 +61,11 @@ def handle_client(client: sck.socket, addr):
 	except Exception as e:
 		logger.warn("broker", str(e))
 	finally:
-		with SUB_LOCK:
-			for topic_key in list(SUBSCRIPTIONS.keys()):
+		with sub_lock:
+			for topic_key in list(subscriptions.keys()):
 				# rebuild the list of subcribers of this particular topic without the disconnected client
-				SUBSCRIPTIONS[topic_key] = [ (c, s_id) for c, s_id in SUBSCRIPTIONS[topic_key] if c != client]
-			CLIENTS.pop(client, None)
+				subscriptions[topic_key] = [ (c, s_id) for c, s_id in subscriptions[topic_key] if c != client]
+			clients.pop(client, None)
 		client.close()
 		logger.info("broker", f"{addr} disconnected")
 					
