@@ -13,4 +13,4 @@ ALERT_MIN_SEV = 4
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EVENT_LOG_FILE = os.path.join(_BASE_DIR, "data", "event_log.json")
-OFFSETS_FILE = os.path.join(_BASE_DIR, "data", "event_log.json")
+OFFSETS_FILE = os.path.join(_BASE_DIR, "data", "offsets.json")
