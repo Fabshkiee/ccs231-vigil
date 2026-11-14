@@ -2,6 +2,7 @@ import socket as sck
 import threading as thr
 import time as t
 import unittest as ut
+from unittest.mock import patch
 import os, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -75,6 +76,56 @@ class TestBrokerConnection(ut.TestCase):
 		# assert 2: verify event_log.json was written
 		self._assert_log_written(topic)
 
+	def test_broker_broadcasts_to_subscribers_and_drops_dead(self):
+		"""
+		Tests the broker's routing loop.  
+		
+		Tests if it safely delivers message to subscribers while droppping dead sockets.
+		Simulates subscriber while broker._handle_sub() is not implemented yet.
+		"""
+		topic = "readings"
+
+		# 2 live sockets
+		broker_sub_sock, client_sub_sock = sck.socketpair()
+		client_sub_sock.settimeout(2.0)
+		self.addCleanup(broker_sub_sock.close)
+		self.addCleanup(client_sub_sock.close)
+
+		# 2 dead sockets
+		dead_broker_sock, dead_client_sock = sck.socketpair()
+		dead_broker_sock.close()
+		dead_client_sock.close()
+
+		# register broker sockets under subscriptions and clients
+		with broker.sub_lock:
+			broker.subscriptions[topic] = [
+				(broker_sub_sock, "sub_live"),
+				(dead_broker_sock, "sub_dead")
+			]
+			broker.clients[broker_sub_sock] = "sub_live"
+			broker.clients[dead_broker_sock] = "sub_dead"
+
+		pub_payload = self._get_test_pub_payload_copy()
+		pub_payload["topic"] = topic
+		pub_line = prot.format_pub(topic, pub_payload) + "\n"
+		self.pub_sock.sendall(pub_line.encode("utf-8"))
+
+		# assert 1: broker replied with pub_ack
+		pub_response = self.pub_file.readline().strip()
+		self._assert_broker_replied_pub_ack(pub_payload["event_id"], pub_response)
+
+		# assert 2: live subscriber received the formatted event
+		with client_sub_sock.makefile("r", encoding="utf-8") as sub_f:
+			received_event = sub_f.readline().strip()
+		self.assertIn(pub_payload["event_id"], received_event)
+		self.assertIn("chants", received_event)
+
+		# assert 3: dead subscriber was removed from both subscriptions and clients
+		with broker.sub_lock:
+			remaining_subs = [s_id for _, s_id in broker.subscriptions.get(topic, [])]
+			self.assertEqual(remaining_subs, ["sub_live"])
+			self.assertNotIn(dead_broker_sock, broker.clients)
+			self.assertIn(broker_sub_sock, broker.clients)
 
 if __name__ == "__main__":
 	ut.main()
