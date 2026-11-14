@@ -50,7 +50,7 @@ def _encode_msg(msg: str) -> bytes:
 def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 	try:
 		storage.append_event(payload)
-	except Exception as e:
+	except (storage.StoreError, OSError) as e:
 		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
 		client.sendall(err_msg)
 		return
@@ -82,7 +82,7 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 	try:
 		offsets = storage.load_offsets()
 		topic_events = storage.load_events().get(topic, [])
-	except Exception as e:
+	except (storage.StoreError, OSError) as e:
 		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
 		client.sendall(err_msg)
 		return
@@ -108,7 +108,7 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 		with sub_lock:
 			try:
 				topic_events = storage.load_events().get(topic, [])
-			except Exception as e:
+			except (storage.StoreError, OSError) as e:
 				err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
 				client.sendall(err_msg)
 				return
