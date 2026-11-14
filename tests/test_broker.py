@@ -39,6 +39,7 @@ class TestBrokerConnection(ut.TestCase):
 		with broker.sub_lock:
 			broker.subscriptions.clear()
 			broker.clients.clear()
+			broker.client_send_locks.clear()
 
 	def _assert_log_written(self, topic: str):
 		with open(consts.EVENT_LOG_FILE, "r", encoding="utf-8") as log_f:
