@@ -34,9 +34,10 @@ class TestBrokerConnection(ut.TestCase):
 
 	@classmethod
 	def tearDownClass(cls):
-		t.sleep(0.05)
 		cls.pub_file.close()
 		cls.pub_sock.close()
+		t.sleep(0.05)
+		cls.logger_patcher.stop()
 
 	def setUp(self):
 		with broker.sub_lock:
