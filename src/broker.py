@@ -128,8 +128,8 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 def _handle_get_stats(client: sck.socket, topic: str) -> None:
 	raise NotImplementedError("GET_STATS handler not yet implemented")
 
-def _handle_no_command(cmd: str) -> None:
-	raise NotImplementedError("default handler not yet implemented")
+def _handle_no_command(client: sck.socket, cmd: str) -> None:
+	logger.info("broker", f"ignored unknown command from {client.getpeername()}: {cmd}")
 
 def handle_client(client: sck.socket, addr):
 	logger.info("broker", f"new connection from {addr}")
@@ -157,7 +157,7 @@ def handle_client(client: sck.socket, addr):
 					case "SUB": _handle_sub(client, fields["topic"], fields["sub_id"])
 					case "ACK": _handle_ack(client, fields["topic"], fields["sub_id"], fields["event_id"])
 					case "GET_STATS": _handle_get_stats(client, fields["topic"])
-					case _: _handle_no_command(command)
+					case _: _handle_no_command(client, command)
 	except (ConnectionError, OSError) as e:
 		logger.warn("broker", str(e))
 	finally:
