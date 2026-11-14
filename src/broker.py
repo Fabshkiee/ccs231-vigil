@@ -44,6 +44,15 @@ def _drop_dead_sockets(dead_sockets: Iterable[sck.socket]) -> None:
 	
 	logger.info("broker", f"dropped {len(dead_set)} dead sockets")
 
+def _send_err(client: sck.socket, err_code: int, reason: str) -> None:
+	"""Helper function that encodes and sends error message to client"""
+	clean_reason = reason.replace("|", "/").replace("\n", " ").replace("\r", "")
+	err_msg: bytes = _encode_msg(prot.format_err(err_code, clean_reason) + "\n")
+	try:
+		client.sendall(err_msg)
+	except (ConnectionError, OSError):
+		pass # there is nobody on the other end
+
 def _encode_msg(msg: str) -> bytes:
 	return msg.encode("utf-8")
 
@@ -51,8 +60,7 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 	try:
 		storage.append_event(payload)
 	except (storage.StoreError, OSError) as e:
-		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
-		client.sendall(err_msg)
+		_send_err(client, 503, str(e))
 		return
 
 	# save successful: copy current subscription list before operation
@@ -83,8 +91,7 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 		offsets = storage.load_offsets()
 		topic_events = storage.load_events().get(topic, [])
 	except (storage.StoreError, OSError) as e:
-		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
-		client.sendall(err_msg)
+		_send_err(client, 503, str(e))
 		return
 
 	# proceed if offsets loaded
@@ -109,8 +116,7 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 			try:
 				topic_events = storage.load_events().get(topic, [])
 			except (storage.StoreError, OSError) as e:
-				err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
-				client.sendall(err_msg)
+				_send_err(client, 503, str(e))
 				return
 				
 			# get the latest total count of events[topic] 
@@ -127,8 +133,7 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 		offsets = storage.load_offsets()
 		events = storage.load_events()
 	except (storage.StoreError, OSError) as e:
-		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
-		client.sendall(err_msg)
+		_send_err(client, 503, str(e))
 		return
 
 	topic_events = events.get(topic, [])
@@ -140,8 +145,9 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 
 	# event doesn't exist
 	if matched_idx is None:
-		err_msg: bytes = _encode_msg(prot.format_err(422, "unknown event") + "\n")
-		client.sendall(err_msg)
+		err_msg = "unknown event"
+		logger.warn("broker", err_msg)
+		_send_err(client, 422, err_msg)
 		return
 
 	client_curr_offset = offsets.get(sub_id, {}).get(topic, -1)
@@ -152,8 +158,7 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 			storage.save_offset(sub_id, topic, matched_idx)
 			logger.info("broker", f"ack {sub_id} on {topic} -> offset {matched_idx}")
 	except (storage.StoreError, OSError) as e:
-		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
-		client.sendall(err_msg)
+		_send_err(client, 503, str(e))
 		return	
 
 # def _handle_get_stats(client: sck.socket, topic: str) -> None:
@@ -176,6 +181,7 @@ def handle_client(client: sck.socket, addr):
 				result = prot.parse_line(line)
 				if isinstance(result, prot.Err):
 					logger.warn("broker", f"error parsing line from {addr}: {result.reason}", line)
+					_send_err(client, result.code, f"error parsing line: {result.reason}")
 					if result.close:
 						break
 					continue
@@ -190,7 +196,8 @@ def handle_client(client: sck.socket, addr):
 					# case "GET_STATS": _handle_get_stats(client, fields["topic"])
 					case _: _handle_no_command(client, command)
 	except (ConnectionError, OSError) as e:
-		logger.warn("broker", str(e))
+		err_msg = str(e)
+		logger.warn("broker", err_msg)
 	finally:
 		_drop_dead_sockets([client])
 		logger.info("broker", f"{addr} disconnected")
