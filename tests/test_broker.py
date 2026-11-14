@@ -17,6 +17,9 @@ ADDRESS = (broker.BROKER_HOST, consts.PORT)
 class TestBrokerConnection(ut.TestCase):
 	@classmethod
 	def setUpClass(cls):
+		cls.logger_patcher = patch("broker.logger")
+		cls.logger_patcher.start()
+
 		cls.server_thread = thr.Thread(
 			target=broker.start_broker,
 			daemon=True,
