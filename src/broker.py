@@ -4,14 +4,12 @@
 # hold a lock while sending — copy what you need, let go, then send.
 import socket as sck
 import threading as thr
-import time as t
 from collections.abc import Iterable
 
 import common.constants as consts
 import common.log as logger
 import common.protocol as prot
 import common.storage as storage
-import common.ids as id
 
 
 BROKER_HOST = "localhost" # change to "0.0.0.0" if receiving external network instead
