@@ -58,6 +58,7 @@ class TestBrokerConnection(ut.TestCase):
 		}.copy()
 
 	def test_publisher_can_connect(self):		
+		"""Tests if publisher can establish basic connection with broker"""
 		ip, port = self.pub_sock.getpeername()
 		self.assertEqual(port, consts.PORT, f"{[port]} is not {consts.PORT}")
 
