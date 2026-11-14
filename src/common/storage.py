@@ -24,7 +24,7 @@ def atomic_write(filepath: str, data: dict | list):
 
 	tmp_filepath = f"{filepath}.tmp"
 
-	blob = json.dumps(data) #fails if disk is full
+	blob = json.dumps(data, indent=2) #fails if disk is full
 
 	try:
 		with open(tmp_filepath, 'w', encoding='utf-8') as f:
