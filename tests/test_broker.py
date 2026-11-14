@@ -45,8 +45,8 @@ class TestBrokerConnection(ut.TestCase):
 			broker.clients.clear()
 			broker.client_send_locks.clear()
 
-	def _assert_log_written(self, topic: str):
-		with open(consts.EVENT_LOG_FILE, "r", encoding="utf-8") as log_f:
+	def _assert_log_written(self, filepath: str, topic: str):
+		with open(filepath, "r", encoding="utf-8") as log_f:
 			contents = log_f.read()
 		self.assertIn(topic, contents)
 	
@@ -86,7 +86,7 @@ class TestBrokerConnection(ut.TestCase):
 		self._assert_broker_replied_pub_ack(pub_payload["event_id"], response)
 
 		# assert 2: verify event_log.json was written
-		self._assert_log_written(topic)
+		self._assert_log_written(consts.EVENT_LOG_FILE, topic)
 
 	def test_broker_broadcasts_to_subscribers_and_drops_dead(self):
 		"""
@@ -220,6 +220,29 @@ class TestBrokerConnection(ut.TestCase):
 		self.assertIn(b"503", sent_bytes)
 		self.assertEqual(broker.subscriptions.get("sightings", []), [])
 		self.assertNotIn(fake_client, broker.clients)
+
+	# Test broker._handle_ack
+	def _pub_event(self, topic: str = "sightings") -> str:
+		payload = self._get_test_pub_payload_copy()
+		payload["topic"] = topic
+		self.pub_sock.sendall((prot.format_pub(topic, payload) + "\n").encode("utf-8"))
+		ack_line = self.pub_file.readline().strip()
+		self._assert_broker_replied_pub_ack(payload["event_id"], ack_line)
+		return payload["event_id"]
+
+	def test_ack_creates_and_updates_offsets_json(self):
+		ev1, ev2 = self._pub_event(), self._pub_event()
+		client = MagicMock()
+
+		broker._handle_ack(client, "sightings", "sub_ack_1", ev1)
+		first_idx = broker.storage.load_offsets()["sub_ack_1"]["sightings"]
+
+		broker._handle_ack(client, "sightings", "sub_ack_1", ev2)
+		second_idx = broker.storage.load_offsets()["sub_ack_1"]["sightings"]
+
+		self.assertGreater(second_idx, first_idx)
+		self.assertTrue(os.path.exists(consts.OFFSETS_FILE))
+		self._assert_log_written(consts.OFFSETS_FILE, "sightings")
 
 if __name__ == "__main__":
 	ut.main()
