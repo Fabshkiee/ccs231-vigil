@@ -256,5 +256,14 @@ class TestBrokerConnection(ut.TestCase):
 
 		self.assertEqual(broker.storage.load_offsets()["sub_ack_2"]["sightings"], saved_idx)
 
+	def test_ack_unknown_event_returns_442(self):
+		other_ev = self._pub_event("readings")
+		client = MagicMock()
+
+		broker._handle_ack(client, "sightings", "sub_ack_3", other_ev)
+
+		self.assertIn(b"422", client.sendall.call_args[0][0])
+		self.assertNotIn("sub_ack_3", broker.storage.load_offsets())
+
 if __name__ == "__main__":
 	ut.main()
