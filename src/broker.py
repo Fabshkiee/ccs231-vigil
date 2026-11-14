@@ -123,7 +123,38 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 				break
 		
 def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> None:
-	raise NotImplementedError("ACK handler not yet implemented")
+	try:
+		offsets = storage.load_offsets()
+		events = storage.load_events()
+	except (storage.StoreError, OSError) as e:
+		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
+		client.sendall(err_msg)
+		return
+
+	topic_events = events.get(topic, [])
+	matched_idx = None
+	for idx, event in enumerate(topic_events):
+		if event["event_id"] == event_id:
+			matched_idx = idx
+			break
+
+	# event doesn't exist
+	if matched_idx is None:
+		err_msg: bytes = _encode_msg(prot.format_err(422, "unknown event") + "\n")
+		client.sendall(err_msg)
+		return
+
+	client_curr_offset = offsets.get(sub_id, {}).get(topic, -1)
+	try:
+		# ignore matched_idx < client_curr_offset
+		# update outdated offset
+		if matched_idx > client_curr_offset:
+			storage.save_offset(sub_id, topic, matched_idx)
+			logger.info("broker", f"ack {sub_id} on {topic} -> offset {matched_idx}")
+	except (storage.StoreError, OSError) as e:
+		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
+		client.sendall(err_msg)
+		return	
 
 # def _handle_get_stats(client: sck.socket, topic: str) -> None:
 # 	raise NotImplementedError("GET_STATS handler not yet implemented")
