@@ -81,7 +81,15 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 	client.sendall(pub_ack_msg)
 
 def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
-	offsets = storage.load_offsets()
+	try:
+		offsets = storage.load_offsets()
+		topic_events = storage.load_events().get(topic, [])
+	except Exception as e:
+		err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
+		client.sendall(err_msg)
+		return
+
+	# proceed if offsets loaded
 	subscriber_offset = offsets.get(sub_id, {})
 	last_acked_idx = subscriber_offset.get(topic, -1)
 	next_idx = last_acked_idx + 1
@@ -92,9 +100,7 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 
 	# replay events
 	while True:
-		topic_events = storage.load_events().get(topic, [])
 		missed_events = topic_events[next_idx:]
-
 		for event in missed_events:
 			event_msg = _encode_msg(prot.format_event(event) + "\n")
 			client.sendall(event_msg)
@@ -102,8 +108,15 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 
 		# briefly acquire lock to make sure no clients arrived
 		with sub_lock:
-			latest_len = len(storage.load_events().get(topic, []))
-			if next_idx >= latest_len:
+			try:
+				topic_events = storage.load_events().get(topic, [])
+			except Exception as e:
+				err_msg: bytes = _encode_msg(prot.format_err(503, str(e)) + "\n")
+				client.sendall(err_msg)
+				return
+				
+			# get the latest total count of events[topic] 
+			if next_idx >= len(topic_events):
 				clients[client] = sub_id
 				# add subscriber to subscriptions[topic] via in-place mutation (no rebuilding)
 				topic_subs = subscriptions.setdefault(topic, [])
