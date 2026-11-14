@@ -13,11 +13,36 @@ import common.storage as storage
 
 
 BROKER_HOST = "localhost" # change to "0.0.0.0" if receiving external network instead
-sub_lock = thr.RLock()
-send_lock = thr.RLock()
+sub_lock = thr.Lock()
+client_send_locks: dict[sck.socket, thr.Lock] = {}
 subscriptions: dict[str, list[tuple]] = {} # topic -> [(client, sub_id)]
 clients: dict[sck.socket, str] = {} # client -> sub_id
 
+def _encode_msg(msg: str) -> bytes:
+	return msg.encode("utf-8")
+
+def _get_send_lock(client: sck.socket) -> thr.Lock:
+	"""Get a client specific lock. Give a lock to a client if they don't have one"""
+	with sub_lock:
+		lock = client_send_locks.get(client)
+		if lock is None:
+			lock = thr.Lock()
+			client_send_locks[client] = lock
+		return lock
+
+def _send_line(client: sck.socket, wire_msg: str) -> None:
+	"""Use this when sending messages sent over network"""
+	data = _encode_msg(wire_msg + "\n")
+	with _get_send_lock(client):
+		client.sendall(data)
+
+def _send_err(client: sck.socket, err_code: int, reason: str) -> None:
+	"""Helper function that encodes and sends error message to client"""
+	clean_reason = reason.replace("|", "/").replace("\n", " ").replace("\r", "")
+	try:
+		_send_line(client, prot.format_err(err_code, clean_reason))
+	except (ConnectionError, OSError):
+		pass # there is nobody on the other end
 
 def _drop_dead_sockets(dead_sockets: Iterable[sck.socket]) -> None:
 	dead_set = set(dead_sockets)
@@ -34,6 +59,7 @@ def _drop_dead_sockets(dead_sockets: Iterable[sck.socket]) -> None:
 		# remove dead sockets in clients as well
 		for dead_sub in dead_set:
 			clients.pop(dead_sub, None)
+			client_send_locks.pop(dead_sub, None) # remove unused locks
 
 	# close dead sockets (outside the lock so I/O it doesn't block other threads)
 	for dead_sub in dead_set:
@@ -43,18 +69,6 @@ def _drop_dead_sockets(dead_sockets: Iterable[sck.socket]) -> None:
 			pass
 	
 	logger.info("broker", f"dropped {len(dead_set)} dead sockets")
-
-def _send_err(client: sck.socket, err_code: int, reason: str) -> None:
-	"""Helper function that encodes and sends error message to client"""
-	clean_reason = reason.replace("|", "/").replace("\n", " ").replace("\r", "")
-	err_msg: bytes = _encode_msg(prot.format_err(err_code, clean_reason) + "\n")
-	try:
-		client.sendall(err_msg)
-	except (ConnectionError, OSError):
-		pass # there is nobody on the other end
-
-def _encode_msg(msg: str) -> bytes:
-	return msg.encode("utf-8")
 
 def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 	# validate the payload has the correct keys
@@ -81,10 +95,10 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 
 	# track empty sockets
 	dead_subscribers: list[sck.socket] = []
-	event_msg: str = prot.format_event(payload) + "\n"
+	event_msg: str = prot.format_event(payload)
 	for subscriber, sub_id in subscriptions_copy:
 		try:
-			subscriber.sendall(_encode_msg(event_msg))
+			_send_line(subscriber, event_msg)
 			logger.info("broker", f"sent {payload["topic"]} | {payload["event_id"]}")
 		except Exception:
 			logger.warn("broker", f"{sub_id} is unresponsive")
@@ -95,8 +109,7 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 		_drop_dead_sockets(dead_subscribers)
 
 	# reply pub_ack with event_id
-	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(payload["event_id"]) + "\n")
-	client.sendall(pub_ack_msg)
+	_send_line(client, prot.format_pub_ack(payload["event_id"]))
 
 def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 	try:
@@ -112,15 +125,13 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 	next_idx = last_acked_idx + 1
 
 	# acknowledge subscriber
-	sub_ack_msg = _encode_msg(prot.format_sub_ack(topic) + "\n")
-	client.sendall(sub_ack_msg)
+	_send_line(client, prot.format_sub_ack(topic))
 
 	# replay events
 	while True:
 		missed_events = topic_events[next_idx:]
 		for event in missed_events:
-			event_msg = _encode_msg(prot.format_event(event) + "\n")
-			client.sendall(event_msg)
+			_send_line(client, prot.format_event(event))
 			next_idx += 1
 
 		# briefly acquire lock to make sure no clients arrived
