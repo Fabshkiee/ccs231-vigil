@@ -28,6 +28,7 @@ AUTO_ROLE = "ParanormalReadings"
 SEV_WORD = "severity"
 RECV_BYTES = 4096
 SHORT_ID_LEN = 8
+ALERT_TOPIC = "alert"
 
 # scenario data for the automatic readings stream
 READING_SEED = 231 # seeded so demo run is repeatable
@@ -121,6 +122,60 @@ def connect(host, port, timeout):
     """open TCP connection; timeout applies to later send/recv"""
     return BrokerLink(socket.create_connection(host, port), timeout=timeout)
 
+def short_id(event_idd):
+    """First few chars of uuid for readable demo"""
+    return event_id[:SHORT_ID_LEN]
+
+def build_payload(kind, sev, role):
+    """JSON object for typed event"""
+    return {"kind": kind, "sev": sev, "source": role}
+
+def publish(link, topic, payload):
+    """send one PUB, wait for its PUB_ACK, and return the new event_id"""
+    link.send(format_pub(topic, payload))
+    # require PUB_ACK before sending the next PUB
+    reply = link.read_reply()
+    if isinstance(reply. Err):
+        # broker sent invalid reply/syntax,
+        # byte stream is corrupted, raise LinkError to abort session
+        raise LinkError(f"bad__reply: {reply.reason}")
+    if reply.cmd == "PUB_ACK":
+        # broker confirmed event is saved and fsynced, return its new id
+        return reply.fields["event_id"]
+    if reply.cmd == "ERR":
+        # valid wire format. if broker refused event,
+        # raise BrokerRej so caller knows nothing was saved and published
+        raise BrokerRejected(f"{reply.fields['code']} {reply.fields['message']}")
+    raise LinkError(f"unexpected_reply: {reply.cmd}")
+
+def publish_and_print(link, topic, payload):
+    """publish one event and print the one line cofirmation"""
+    # block until broker confirms event is saved
+    event_id = publish(link, topic, payload)
+    print(f"Event {short_id(event_id)} saved ({topic})")
+
+def handle_line(link, role, raw):
+    """validate one typed line, then publish it(and its alert if due)"""
+    parsed, reason = parse_typed_line(raw) # validate
+    if reason:
+        # validate before touching the network
+        warn("pub", reason, raw)
+        return
+    kind, sev = parsed
+    # package validated data and pub role into the JSON payload
+    payload = build_payload(kind, sev, role)
+    try:
+        # send primary event to this role's main topic
+        publish_and_print(link, ROLES[role][0], payload)
+        # check if role is allowed to alert
+        if needs_alert(role, sev): 
+            # alert is second PUB with same payload, broker gives it its own id
+            # and is only sent after the first succeeded   
+            publish_and_print(link, ALERT_TOPIC, payload)
+    except BrokerRejected as exc:
+        # connection is healthy, if first PUB was rejected,
+        # skip the alert, since nothing was saved 
+        warn("pub", "broker_rejected", str(exc))
 
 # Prompt loop
 def main(argv=None):
