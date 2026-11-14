@@ -122,13 +122,13 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 					topic_subs.append((client, sub_id))
 				break
 		
-def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str):
+def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> None:
 	raise NotImplementedError("ACK handler not yet implemented")
 
-def _handle_get_stats(client: sck.socket, topic: str):
+def _handle_get_stats(client: sck.socket, topic: str) -> None:
 	raise NotImplementedError("GET_STATS handler not yet implemented")
 
-def _handle_no_command(cmd: str):
+def _handle_no_command(cmd: str) -> None:
 	raise NotImplementedError("default handler not yet implemented")
 
 def handle_client(client: sck.socket, addr):
