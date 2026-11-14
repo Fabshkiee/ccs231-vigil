@@ -57,6 +57,18 @@ def _encode_msg(msg: str) -> bytes:
 	return msg.encode("utf-8")
 
 def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
+	# validate the payload has the correct keys
+	for key in ("event_id", "topic", "payload", "created_at"):
+		if key not in payload:
+			_send_err(client, 400, f"missing_{key}")
+			return
+	
+	# payload[topic] must equal topic
+	if payload["topic"] != topic:
+		_send_err(client, 400, "topic mismatch")
+		return
+
+	# try to save the event in log file
 	try:
 		storage.append_event(payload)
 	except (storage.StoreError, OSError) as e:
