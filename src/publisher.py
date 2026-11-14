@@ -2,10 +2,19 @@
 # "saved". If severity is 4 or 5 it also sends the same event to alert
 # that decision belongs here, not in the broker, because the broker is only
 # allowed to route by topic.
-import argparse
-import re
+import argparse, random, socket, sys, time, re
+
 from common.constants import SEV_MIN, SEV_MAX, ALERT_MIN_SEV
 from common.log import warn, info
+from common.protocol import Err, format_pub, parse_line, split_lines
+
+
+# --- TEMP CONSTANTS (To be moved to constants.py) ----
+HOST = "127.0.0.1"
+PUB_ACK_TIMEOUT_S = 2
+READINGS_INTERVAL_S = 3 # paranormal readings
+# -----------------------------------------------------
+
 
 # roles, only two receives alert
 ROLES = {
@@ -15,6 +24,18 @@ ROLES = {
 }
 
 SEV_WORD = "severity"
+AUTO_ROLE = "ParanormalReadings"
+SEV_WORD = "severity"
+RECV_BYTES = 4096
+SHORT_ID_LEN = 8
+
+# scenario data for the automatic readings stream
+READING_SEED = 231 # seeded so demo run is repeatable
+ZONES = ("zone-a", "zone-b", "zone-c")
+READING_MIN, READING_MAX = 0, 100
+
+class LinkError(Exception):
+    """Connection to the broker is unusable (timeout, reset, bad reply)"""
 
 # allow only valid nodes to connect to system
 def parse_args(argv=None):
@@ -50,6 +71,53 @@ def needs_alert(role, sev):
     """true when a second PUB on the 'alert' topic must be sent"""
     may_alert = ROLES.get(role, (None, False))[1]
     return may_alert and sev >= ALERT_MIN_SEV
+
+class BrokerLink:
+    """one TCP connection to the broker, with line framing and error wrapping"""
+
+    def __init__(self, sock):
+        # accept existing socket for unit testing
+        # tests hand in socketpair() instead of real network connection
+        self.sock = socket 
+        self._buffer = b""
+        self._lines = []
+
+    def send(self, line):
+        """send one protocol line, add in \n for boundary"""
+        try:
+            # keeps writing until every byte is accepted by the OS
+            self.sock.sendall(line.encode("utf-8") + b"\n")
+        except OSError as exc:
+            raise LinkError(f"send_failed: {exc}") from exc
+
+    def read_reply(self):
+        """block until one full reply line arrives, retun Ok/Err result"""
+        while not self._lines:
+            try:
+                data = self.sock.recv(RECV_BYTES)
+            except TimeoutError:
+                # catch TimeoutError for silent broker raise
+                raise LinkError("no_reply_within_timeout") from None
+            except OSError as exc:
+                raise LinkError(f"recv_failed: {exc}") from exc
+            if not data:
+                # recv() return b"" means broker closed the connection
+                raise LinkError("connection_closed")
+            complete, self._buffer, err = split_lines(self._buffer, data)
+            if err:
+                raise LinkError(err.reason)
+            # skip blank lines
+            self._lines.extend(line for line in complete if line.strip())
+        return parse_line(self._lines.pop(0))
+
+    def close(self):
+        """close socket"""
+        self.sock.close()
+
+def connect(host, port, timeout):
+    """open TCP connection; timeout applies to later send/recv"""
+    return BrokerLink(socket.create_connection(host, port), timeout=timeout)
+
 
 # Prompt loop
 def main(argv=None):
