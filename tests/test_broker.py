@@ -41,7 +41,7 @@ class TestBrokerConnection(ut.TestCase):
 			broker.subscriptions.clear()
 			broker.clients.clear()
 
-	def _assert_verify_log_was_written(self, topic: str):
+	def _assert_log_written(self, topic: str):
 		with open(consts.EVENT_LOG_FILE, "r", encoding="utf-8") as log_f:
 			contents = log_f.read()
 		self.assertIn(topic, contents)
@@ -55,7 +55,7 @@ class TestBrokerConnection(ut.TestCase):
 			"topic": "sightings", 
 			"payload": {"text": "chants", "severity": 2}, 
 			"created_at": t.time()
-		}.copy()
+		}
 
 	def test_publisher_can_connect(self):		
 		"""Tests if publisher can establish basic connection with broker"""
@@ -73,7 +73,7 @@ class TestBrokerConnection(ut.TestCase):
 		self._assert_broker_replied_pub_ack(pub_payload["event_id"], response)
 
 		# assert 2: verify event_log.json was written
-		self._assert_verify_log_was_written(topic)
+		self._assert_log_written(topic)
 
 
 if __name__ == "__main__":
