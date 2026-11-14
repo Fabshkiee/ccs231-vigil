@@ -204,5 +204,17 @@ class TestBrokerConnection(ut.TestCase):
 		self.assertIn(b"ev2", sent[1])
 		self.assertIn(b"ev3", sent[2])
 
+	@patch("broker.storage.load_offsets", side_effect=OSError("Disk read failed"))
+	def test_sub_storage_failure_returns_503_and_aborts(self, _mock_offsets):
+		"""Test Case #3: Storage error replies with 503 and does not register the subscriber."""
+		fake_client = MagicMock()
+
+		broker._handle_sub(fake_client, "sightings", "sub_fail")
+
+		sent_bytes = fake_client.sendall.call_args[0][0]
+		self.assertIn(b"503", sent_bytes)
+		self.assertEqual(broker.subscriptions.get("sightings", []), [])
+		self.assertNotIn(fake_client, broker.clients)
+
 if __name__ == "__main__":
 	ut.main()
