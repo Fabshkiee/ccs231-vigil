@@ -37,6 +37,9 @@ READING_MIN, READING_MAX = 0, 100
 class LinkError(Exception):
     """Connection to the broker is unusable (timeout, reset, bad reply)"""
 
+class BrokerRejected(Exception):
+    """broker answered with an ERR line, connection is fine"""
+
 # allow only valid nodes to connect to system
 def parse_args(argv=None):
     """Read --as <role> from the command line"""
