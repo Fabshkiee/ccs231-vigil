@@ -172,12 +172,12 @@ class TestBrokerConnection(ut.TestCase):
 		mock_events.return_value = {"sightings": [ev_pld]}
 		sub_sock, sub_file = self._connect_client()
 
-		# 1. Subscribe -> expects SUB_ACK + replayed ev_pld["event_id"]
+		# subscribe -> expects SUB_ACK + replayed ev_pld["event_id"]
 		sub_sock.sendall(b"SUB|sightings|sub_new\n")
 		self.assertEqual(sub_file.readline().strip(), prot.format_sub_ack("sightings"))
 		self.assertIn(ev_pld["event_id"], sub_file.readline())
 
-		# 2. Publish live -> expects live_2 delivered
+		# publish live -> expects live_2 delivered
 		payload = self._get_test_pub_payload_copy()
 		self.pub_sock.sendall((prot.format_pub("sightings", payload) + "\n").encode("utf-8"))
 		self.pub_file.readline() 
