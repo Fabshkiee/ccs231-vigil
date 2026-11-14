@@ -80,9 +80,37 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 	pub_ack_msg: bytes = _encode_msg(prot.format_pub_ack(payload["event_id"]) + "\n")
 	client.sendall(pub_ack_msg)
 
-def _handle_sub(client: sck.socket, topic: str, sub_id: str):
-	raise NotImplementedError("SUB handler not yet implemented")
+def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
+	offsets = storage.load_offsets()
+	subscriber_offset = offsets.get(sub_id, {})
+	last_acked_idx = subscriber_offset.get(topic, -1)
+	next_idx = last_acked_idx + 1
 
+	# acknowledge subscriber
+	sub_ack_msg = _encode_msg(prot.format_pub_ack(topic) + "\n")
+	client.sendall(sub_ack_msg)
+
+	# replay events
+	while True:
+		topic_events = storage.load_events().get(topic, [])
+		missed_events = topic_events[next_idx:]
+
+		for event in missed_events:
+			event_msg = _encode_msg(prot.format_event(event) + "\n")
+			client.sendall(event_msg)
+			next_idx += 1
+
+		# briefly acquire lock to make sure no clients arrived
+		with sub_lock:
+			latest_len = len(storage.load_events().get(topic, []))
+			if next_idx >= latest_len:
+				clients[client] = sub_id
+				# add subscriber to subscriptions[topic] via in-place mutation (no rebuilding)
+				topic_subs = subscriptions.setdefault(topic, [])
+				if not any(c is client for c, _ in topic_subs):
+					topic_subs.append((client, sub_id))
+				break
+		
 def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str):
 	raise NotImplementedError("ACK handler not yet implemented")
 
