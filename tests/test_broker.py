@@ -125,5 +125,33 @@ class TestBrokerConnection(ut.TestCase):
 			self.assertNotIn(dead_broker_sock, broker.clients)
 			self.assertIn(broker_sub_sock, broker.clients)
 
+	@patch("broker.storage.append_event", side_effect=OSError("Disk full"))
+	def test_broker_fails_to_save_event_returns_503_and_aborts_broadcast(self, mock_append):
+		"""Test broker replies with ERR 503 and does not forward event to subscribers on storage failure"""
+		topic = "sightings"
+
+		broker_sub_sock, client_sub_sock = sck.socketpair()
+		client_sub_sock.settimeout(0.2)  # Short timeout since we expect no message
+		self.addCleanup(broker_sub_sock.close)
+		self.addCleanup(client_sub_sock.close)
+
+		with broker.sub_lock:
+			broker.subscriptions[topic] = [(broker_sub_sock, "sub_live")]
+			broker.clients[broker_sub_sock] = "sub_live"
+
+		# publish an event while storage.append_event is rigged to fail
+		pub_payload = self._get_test_pub_payload_copy()
+		pub_line = prot.format_pub(topic, pub_payload) + "\n"
+		self.pub_sock.sendall(pub_line.encode("utf-8"))
+
+		# assert 1: publisher receives a 503 error message
+		pub_response = self.pub_file.readline().strip()
+		self.assertIn("503", pub_response)
+		self.assertIn("Disk full", pub_response)
+
+		# assert 2: subscriber never received the unsaved event
+		with self.assertRaises(TimeoutError):
+			client_sub_sock.recv(1024)
+
 if __name__ == "__main__":
 	ut.main()
