@@ -93,7 +93,7 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 	next_idx = last_acked_idx + 1
 
 	# acknowledge subscriber
-	sub_ack_msg = _encode_msg(prot.format_pub_ack(topic) + "\n")
+	sub_ack_msg = _encode_msg(prot.format_sub_ack(topic) + "\n")
 	client.sendall(sub_ack_msg)
 
 	# replay events
