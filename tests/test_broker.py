@@ -244,5 +244,17 @@ class TestBrokerConnection(ut.TestCase):
 		self.assertTrue(os.path.exists(consts.OFFSETS_FILE))
 		self._assert_log_written(consts.OFFSETS_FILE, "sightings")
 
+	def test_ack_ignores_duplicate_and_stale_ack(self):
+		ev1, ev2 = self._pub_event(), self._pub_event()
+		client = MagicMock()
+
+		broker._handle_ack(client, "sightings", "sub_ack_2", ev2)
+		saved_idx = broker.storage.load_offsets()["sub_ack_2"]["sightings"]
+
+		broker._handle_ack(client, "sightings", "sub_ack_2", ev2) # duplicate
+		broker._handle_ack(client, "sightings", "sub_ack_2", ev1) # stale
+
+		self.assertEqual(broker.storage.load_offsets()["sub_ack_2"]["sightings"], saved_idx)
+
 if __name__ == "__main__":
 	ut.main()
