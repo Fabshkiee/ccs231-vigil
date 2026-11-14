@@ -183,5 +183,26 @@ class TestBrokerConnection(ut.TestCase):
 		self.pub_file.readline() 
 		self.assertIn(payload["event_id"], sub_file.readline())
 
+	@patch("broker.storage.load_events")
+	@patch("broker.storage.load_offsets")
+	def test_reconnecting_subscriber_replays_only_missed_events(self, mock_offsets, mock_events):
+		"""Test Case #2: Skips already-acked events (0, 1) and replays only missed events (2, 3)."""
+		mock_offsets.return_value = {"sub_alice": {"sightings": 1}}
+		mock_events.return_value = {
+		"sightings": [
+				{"event_id": "ev0", "topic": "sightings", "payload": {}},
+				{"event_id": "ev1", "topic": "sightings", "payload": {}},
+				{"event_id": "ev2", "topic": "sightings", "payload": {}},
+				{"event_id": "ev3", "topic": "sightings", "payload": {}},
+			]
+		}
+		fake_client = MagicMock()
+		broker._handle_sub(fake_client, "sightings", "sub_alice")
+
+		sent = [call[0][0] for call in fake_client.sendall.call_args_list]
+		self.assertEqual(len(sent), 3)  # SUB_ACK + ev2 + ev3
+		self.assertIn(b"ev2", sent[1])
+		self.assertIn(b"ev3", sent[2])
+
 if __name__ == "__main__":
 	ut.main()
