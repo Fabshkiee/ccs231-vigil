@@ -2,8 +2,8 @@ import socket as sck
 import threading as thr
 import time as t
 import unittest as ut
-from unittest.mock import patch
-import os, sys
+from unittest.mock import MagicMock, patch
+import os, sys, io
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -55,6 +55,15 @@ class TestBrokerConnection(ut.TestCase):
 			"payload": {"text": "chants", "severity": 2}, 
 			"created_at": t.time()
 		}
+
+	def _connect_client(self) -> tuple[sck.socket, io.TextIOWrapper]:
+		sock = sck.socket(sck.AF_INET, sck.SOCK_STREAM)
+		sock.settimeout(2.0)
+		sock.connect(ADDRESS)
+		f = sock.makefile("r", encoding="utf-8")
+		self.addCleanup(sock.close)
+		self.addCleanup(f.close)
+		return sock, f
 
 	def test_publisher_can_connect(self):		
 		"""Tests if publisher can establish basic connection with broker"""
@@ -152,6 +161,27 @@ class TestBrokerConnection(ut.TestCase):
 		# assert 2: subscriber never received the unsaved event
 		with self.assertRaises(TimeoutError):
 			client_sub_sock.recv(1024)
+
+	@patch("broker.storage.append_event")
+	@patch("broker.storage.load_events")
+	@patch("broker.storage.load_offsets")
+	def test_first_time_subscriber(self, mock_offsets, mock_events, _mock_append):
+		"""Test Case #1: First time subscriber"""
+		ev_pld = self._get_test_pub_payload_copy()
+		mock_offsets.return_value = {}
+		mock_events.return_value = {"sightings": [ev_pld]}
+		sub_sock, sub_file = self._connect_client()
+
+		# 1. Subscribe -> expects SUB_ACK + replayed ev_pld["event_id"]
+		sub_sock.sendall(b"SUB|sightings|sub_new\n")
+		self.assertEqual(sub_file.readline().strip(), prot.format_sub_ack("sightings"))
+		self.assertIn(ev_pld["event_id"], sub_file.readline())
+
+		# 2. Publish live -> expects live_2 delivered
+		payload = self._get_test_pub_payload_copy()
+		self.pub_sock.sendall((prot.format_pub("sightings", payload) + "\n").encode("utf-8"))
+		self.pub_file.readline() 
+		self.assertIn(payload["event_id"], sub_file.readline())
 
 if __name__ == "__main__":
 	ut.main()
