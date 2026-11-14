@@ -19,6 +19,7 @@ subscriptions: dict[str, list[tuple]] = {} # topic -> [(client, sub_id)]
 clients: dict[sck.socket, str] = {} # client -> sub_id
 
 def _encode_msg(msg: str) -> bytes:
+	"""Encodes a string in utf-8"""
 	return msg.encode("utf-8")
 
 def _get_send_lock(client: sck.socket) -> thr.Lock:
@@ -31,7 +32,13 @@ def _get_send_lock(client: sck.socket) -> thr.Lock:
 		return lock
 
 def _send_line(client: sck.socket, wire_msg: str) -> None:
-	"""Use this when sending messages sent over network"""
+	"""
+	Helper function that encodes, adds \\n, and sends message to client.
+	
+	- IMPORTANT: format msg using the appropriate `prot.format_*`
+	- encodes the msg via `_encode_msg`
+	- adds a \\n at the end of the message to not hang socket.makefile.readline.
+	"""
 	data = _encode_msg(wire_msg + "\n")
 	with _get_send_lock(client):
 		client.sendall(data)
