@@ -201,17 +201,20 @@ def handle_client(client: sck.socket, addr):
 	logger.info("broker", f"new connection from {addr}")
 	
 	try:
-		with client, client.makefile("r", encoding="utf-8") as client_file:
+		with client, client.makefile("rb", encoding="utf-8") as client_file:
 			while True:
-				line = client_file.readline(consts.MAX_LINE_BYTES)
-				if not line:
+				raw_line: bytes = client_file.readline(consts.MAX_LINE_BYTES + 1)
+				if not raw_line:
 					logger.info("broker", f"connection closed by {addr}")
 					break
+				if len(raw_line) > consts.MAX_LINE_BYTES:
+					_send_err(client, 413, "line too long")
+					break
 				
-				result = prot.parse_line(line)
+				result: prot.Err | prot.Ok = prot.parse_line(raw_line.rstrip(b"\n"))
 				if isinstance(result, prot.Err):
-					logger.warn("broker", f"error parsing line from {addr}: {result.reason}", line)
-					_send_err(client, result.code, f"error parsing line: {result.reason}")
+					logger.warn("broker", f"error parsing line from {addr}: {result.reason}")
+					_send_err(client, result.code, result.reason)
 					if result.close:
 						break
 					continue
