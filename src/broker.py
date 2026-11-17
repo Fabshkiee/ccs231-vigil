@@ -68,7 +68,7 @@ def _drop_dead_sockets(dead_sockets: Iterable[sck.socket]) -> None:
 			clients.pop(dead_sub, None)
 			client_send_locks.pop(dead_sub, None) # remove unused locks
 
-	# close dead sockets (outside the lock so I/O it doesn't block other threads)
+	# close dead sockets (outside the lock so I/O doesn't block other threads)
 	for dead_sub in dead_set:
 		try:
 			dead_sub.close()
