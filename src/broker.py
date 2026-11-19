@@ -264,6 +264,13 @@ def handle_client(client: sck.socket, addr):
 		logger.info("broker", f"{addr} disconnected")
 					
 def start_broker():
+	# §7: a corrupt log is a loud failure, not an empty history
+	try:
+		storage.load_events()
+	except storage.StoreError as e:
+		logger.info("broker", f"refusing to start: {e}")
+		return
+
 	with sck.socket(sck.AF_INET, sck.SOCK_STREAM) as server:
 		server.setsockopt(sck.SOL_SOCKET, sck.SO_REUSEADDR, 1) 
 		server.bind((BROKER_HOST, consts.PORT))

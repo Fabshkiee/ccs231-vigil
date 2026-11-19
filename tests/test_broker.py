@@ -254,6 +254,13 @@ class TestBrokerConnection(ut.TestCase):
 		self.assertEqual(broker.subscriptions.get("sightings", []), [])
 		self.assertNotIn(fake_client, broker.clients)
 
+	def test_corrupt_log_blocks_startup(self):
+		"""A corrupt event log must stop the broker before it listens."""
+		with patch("broker.storage.load_events", side_effect=broker.storage.StoreError("bad json")), \
+				patch("broker.sck.socket") as fake_socket:
+			broker.start_broker()
+		fake_socket.assert_not_called()
+
 	def test_resub_replaces_the_old_socket(self):
 		"""A second SUB with the same sub_id must replace the first socket."""
 		topic = "sightings"
