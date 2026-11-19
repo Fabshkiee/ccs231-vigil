@@ -148,5 +148,17 @@ class TestRejects(unittest.TestCase):
         self.assertEqual(self.reason("PUB|sighting|{}|x"), "bad_json") #P-02 FIX: extra '|' becomes part of the JSON, so bad_json not bad_field_count
         self.assertEqual(self.reason("EVENT|{}|x"), "bad_json")        #P-02 FIX: same rule for EVENT
 
+    def test_empty_and_whitespace_topic(self): #P-03 NEW test: empty or blank topic gives empty_topic
+        cases = [
+            "SUB||team", "SUB|   |team", "SUB|\t|team",    #P-03 FIX: SUB with empty, spaces-only and tab-only topic
+            "SUB_ACK|", "SUB_ACK|   ", "SUB_ACK|\t",       #P-03 FIX: SUB_ACK
+            "PUB||{}", "PUB|   |{}", "PUB|\t|{}",          #P-03 FIX: PUB
+            "ACK||s|e", "ACK|   |s|e", "ACK|\t|s|e",       #P-03 FIX: ACK
+            "GET_STATS|", "GET_STATS|   ", "GET_STATS|\t", #P-03 FIX: GET_STATS
+        ]
+        for line in cases:
+            with self.subTest(line=line):
+                self.assertEqual(self.reason(line), "empty_topic") #P-03 FIX: named empty_topic, not a generic error
+
 if __name__ == "__main__":
     unittest.main()
