@@ -195,11 +195,14 @@ def run_auto(link, role, interval):
     info("pub", f"{role} streaming to '{topic}' every {interval}s (Ctrl+C to stop)")
     # run continuously
     while True:
-        # build one reading dictionary, sends json over the socket,
-        # blocks for PUB_ACK, and prints line confirmation
-        publish_and_print(link, make_reading(rng, role))
-        # pause loop to follow interval
-        time.sleep(interval)
+        try:
+            # build one reading dictionary, sends json over the socket,
+            # blocks for PUB_ACK, and prints line confirmation
+            publish_and_print(link, make_reading(rng, role))
+        except BrokerRejected as exc:
+            warn("pub", "broker_rejected", str(exc))
+            # pause loop to follow interval
+            time.sleep(interval)
 
 def run_typed(link, role):
     """SightingReports / PoltergeistActivity mode, one typed line, one event."""
