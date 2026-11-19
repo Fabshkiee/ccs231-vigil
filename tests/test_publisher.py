@@ -122,6 +122,24 @@ class PayloadTests(unittest.TestCase):
             self.assertTrue(READING_MIN <= reading["level"] <= READING_MAX)
             self.assertNotIn("sev", reading)    # readings never carry severity
 
+class PublishTests(unittest.TestCase):
+    # success case
+    def test_returns_event_id_and_sends_pub_line(self):
+        link = FakeLink([Ok("PUB_ACK", {"event_id": LONG_ID})])
+        payload = {"kind": "x", "sev": 1, "source": "SightingReports"}
+        self.assertEqual(publish(link, "sighting", payload), LONG_ID)
+        self.assertEqual(link.sent, [format_pub("sighting", payload)])
+    # valid input but broker replies ERR
+    def test_err_reply_raises_broker_rejected(self):
+        link = FakeLink([Ok("ERR", {"code": 503, "message": "store_failed"})])
+        with self.assertRaises(BrokerRejected):
+            publish(link, "sighting", {"kind": "x"})
+    # invalid reply or wrong command
+    def test_malformed_or_unexpected_reply_raises_link_error(self):
+        for reply in (Err(400, "bad_field_count"), Ok("SUB_ACK", {"topic": "t"})):
+            with self.subTest(reply=reply):
+                with self.assertRaises(LinkError):
+                    publish(FakeLink([reply]), "sighting", {"kind": "x"})
 
 
 if __name__ == "__main__":
