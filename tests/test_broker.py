@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import broker
 import common.constants as consts
 import common.protocol as prot
-import common.ids as id
 
 ADDRESS = (broker.BROKER_HOST, consts.PORT)
 
@@ -50,16 +49,13 @@ class TestBrokerConnection(ut.TestCase):
 			contents = log_f.read()
 		self.assertIn(topic, contents)
 	
-	def _assert_broker_replied_pub_ack(self, event_id: str, response: str):
-		self.assertIn(prot.format_pub_ack(event_id), response)
+	def _acked_event_id(self, response: str) -> str:
+		parsed = prot.parse_pub_ack(response)
+		self.assertIsInstance(parsed, prot.Ok)
+		return parsed.fields["event_id"]
 
-	def _get_test_pub_payload_copy(self) -> dict:
-		return {
-			"event_id": id.new_event_id(), 
-			"topic": "sightings", 
-			"payload": {"text": "chants", "severity": 2}, 
-			"created_at": t.time()
-		}
+	def _get_test_pub_payload(self) -> dict:
+		return {"text": "chants", "severity": 2}
 
 	def _connect_client(self) -> tuple[sck.socket, io.TextIOWrapper]:
 		sock = sck.socket(sck.AF_INET, sck.SOCK_STREAM)
@@ -77,13 +73,12 @@ class TestBrokerConnection(ut.TestCase):
 
 	def test_broker_save_event_and_returns_pub_ack(self):
 		topic = "sightings"
-		pub_payload: dict = self._get_test_pub_payload_copy()
-		pub_line = prot.format_pub(topic, pub_payload) + "\n"
+		pub_line = prot.format_pub(topic, self._get_test_pub_payload()) + "\n"
 		self.pub_sock.sendall(pub_line.encode("utf-8"))
 
 		# assert 1: broker replied with pub_ack
 		response = self.pub_file.readline().strip()
-		self._assert_broker_replied_pub_ack(pub_payload["event_id"], response)
+		self._acked_event_id(response)
 
 		# assert 2: verify event_log.json was written
 		self._assert_log_written(consts.EVENT_LOG_FILE, topic)
@@ -117,19 +112,17 @@ class TestBrokerConnection(ut.TestCase):
 			broker.clients[broker_sub_sock] = "sub_live"
 			broker.clients[dead_broker_sock] = "sub_dead"
 
-		pub_payload = self._get_test_pub_payload_copy()
-		pub_payload["topic"] = topic
-		pub_line = prot.format_pub(topic, pub_payload) + "\n"
+		pub_line = prot.format_pub(topic, self._get_test_pub_payload()) + "\n"
 		self.pub_sock.sendall(pub_line.encode("utf-8"))
 
 		# assert 1: broker replied with pub_ack
 		pub_response = self.pub_file.readline().strip()
-		self._assert_broker_replied_pub_ack(pub_payload["event_id"], pub_response)
+		event_id = self._acked_event_id(pub_response)
 
 		# assert 2: live subscriber received the formatted event
 		with client_sub_sock.makefile("r", encoding="utf-8") as sub_f:
 			received_event = sub_f.readline().strip()
-		self.assertIn(pub_payload["event_id"], received_event)
+		self.assertIn(event_id, received_event)
 		self.assertIn("chants", received_event)
 
 		# assert 3: dead subscriber was removed from both subscriptions and clients
@@ -154,8 +147,7 @@ class TestBrokerConnection(ut.TestCase):
 			broker.clients[broker_sub_sock] = "sub_live"
 
 		# publish an event while storage.append_event is rigged to fail
-		pub_payload = self._get_test_pub_payload_copy()
-		pub_line = prot.format_pub(topic, pub_payload) + "\n"
+		pub_line = prot.format_pub(topic, self._get_test_pub_payload()) + "\n"
 		self.pub_sock.sendall(pub_line.encode("utf-8"))
 
 		# assert 1: publisher receives a 503 error message
@@ -172,7 +164,12 @@ class TestBrokerConnection(ut.TestCase):
 	@patch("broker.storage.load_offsets")
 	def test_first_time_subscriber(self, mock_offsets, mock_events, _mock_append):
 		"""Test Case #1: First time subscriber"""
-		ev_pld = self._get_test_pub_payload_copy()
+		ev_pld = {
+			"event_id": "ev_replay",
+			"topic": "sightings",
+			"payload": {"text": "chants", "severity": 2},
+			"created_at": 0.0,
+		}
 		mock_offsets.return_value = {}
 		mock_events.return_value = {"sightings": [ev_pld]}
 		sub_sock, sub_file = self._connect_client()
@@ -182,11 +179,10 @@ class TestBrokerConnection(ut.TestCase):
 		self.assertEqual(sub_file.readline().strip(), prot.format_sub_ack("sightings"))
 		self.assertIn(ev_pld["event_id"], sub_file.readline())
 
-		# publish live -> expects live_2 delivered
-		payload = self._get_test_pub_payload_copy()
-		self.pub_sock.sendall((prot.format_pub("sightings", payload) + "\n").encode("utf-8"))
-		self.pub_file.readline() 
-		self.assertIn(payload["event_id"], sub_file.readline())
+		# publish live -> expects the newly acked id delivered
+		self.pub_sock.sendall((prot.format_pub("sightings", self._get_test_pub_payload()) + "\n").encode("utf-8"))
+		event_id = self._acked_event_id(self.pub_file.readline().strip())
+		self.assertIn(event_id, sub_file.readline())
 
 	@patch("broker.storage.load_events")
 	@patch("broker.storage.load_offsets")
@@ -223,12 +219,9 @@ class TestBrokerConnection(ut.TestCase):
 
 	# Test broker._handle_ack
 	def _pub_event(self, topic: str = "sightings") -> str:
-		payload = self._get_test_pub_payload_copy()
-		payload["topic"] = topic
-		self.pub_sock.sendall((prot.format_pub(topic, payload) + "\n").encode("utf-8"))
+		self.pub_sock.sendall((prot.format_pub(topic, self._get_test_pub_payload()) + "\n").encode("utf-8"))
 		ack_line = self.pub_file.readline().strip()
-		self._assert_broker_replied_pub_ack(payload["event_id"], ack_line)
-		return payload["event_id"]
+		return self._acked_event_id(ack_line)
 
 	def test_ack_creates_and_updates_offsets_json(self):
 		ev1, ev2 = self._pub_event(), self._pub_event()

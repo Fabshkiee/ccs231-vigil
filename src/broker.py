@@ -4,9 +4,11 @@
 # hold a lock while sending — copy what you need, let go, then send.
 import socket as sck
 import threading as thr
+import time
 from collections.abc import Iterable
 
 import common.constants as consts
+import common.ids as ids
 import common.log as logger
 import common.protocol as prot
 import common.storage as storage
@@ -78,20 +80,17 @@ def _drop_dead_sockets(dead_sockets: Iterable[sck.socket]) -> None:
 	logger.info("broker", f"dropped {len(dead_set)} dead sockets")
 
 def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
-	# validate the payload has the correct keys
-	for key in ("event_id", "topic", "payload", "created_at"):
-		if key not in payload:
-			_send_err(client, 400, f"missing_{key}")
-			return
-	
-	# payload[topic] must equal topic
-	if payload["topic"] != topic:
-		_send_err(client, 400, "topic mismatch")
-		return
+	# the broker owns the envelope: §4 mints event_id at append time
+	event = {
+		"event_id": ids.new_event_id(),
+		"topic": topic,
+		"payload": payload,
+		"created_at": time.time(),
+	}
 
 	# try to save the event in log file
 	try:
-		storage.append_event(payload)
+		storage.append_event(event)
 	except (storage.StoreError, OSError) as e:
 		logger.warn("broker", str(e))
 		_send_err(client, 503, "store failure")
@@ -103,11 +102,11 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 
 	# track empty sockets
 	dead_subscribers: list[sck.socket] = []
-	event_msg: str = prot.format_event(payload)
+	event_msg: str = prot.format_event(event)
 	for subscriber, sub_id in subscriptions_copy:
 		try:
 			_send_line(subscriber, event_msg)
-			logger.info("broker", f"sent {payload["topic"]} | {payload["event_id"]}")
+			logger.info("broker", f"sent {event["topic"]} | {event["event_id"]}")
 		except (ConnectionError, OSError):
 			logger.warn("broker", f"{sub_id} is unresponsive")
 			logger.info("broker", f"dropped {sub_id} from {topic}")
@@ -117,7 +116,7 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 		_drop_dead_sockets(dead_subscribers)
 
 	# reply pub_ack with event_id
-	_send_line(client, prot.format_pub_ack(payload["event_id"]))
+	_send_line(client, prot.format_pub_ack(event["event_id"]))
 
 def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 	try:
