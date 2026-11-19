@@ -155,5 +155,10 @@ class HandleLineTests(unittest.TestCase):
         self.assertIn("saved (sighting)", out)
         self.assertIn("saved (alert)", out)
 
+    def test_low_severity_sends_only_the_event(self):
+        link = FakeLink([self.ACK])
+        run_quietly(handle_line, link, "SightingReports", "footsteps, severity 3")
+        self.assertEqual(len(link.sent), 1)
+
 if __name__ == "__main__":
     unittest.main()
