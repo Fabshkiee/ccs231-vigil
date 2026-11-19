@@ -32,6 +32,12 @@ class TestBuffering(unittest.TestCase):
         lines, rest, _ = p.split_lines(rest, b"team\n")
         self.assertEqual(lines, [b"SUB|sighting|team"])
 
+    def test_complete_line_then_unfinished_line_in_one_chunk(self):             #P-07 NEW test
+        lines, rest, err = p.split_lines(b"", b"SUB|a|b\nPUB|sig")              #one complete line + an unfinished one in the same chunk
+        self.assertEqual((lines, rest, err), ([b"SUB|a|b"], b"PUB|sig", None))  #P-07 FIX: complete line returned, unfinished part stays buffered, no error
+        lines, rest, err = p.split_lines(rest, b'hting|{}\n')                   #P-07 FIX: next chunk finishes the kept tail
+        self.assertEqual((lines, rest, err), ([b"PUB|sighting|{}"], b"", None)) #P-07 FIX: tail joins the new bytes into one full line
+
     def test_oversize_closes(self):
         _, _, err = p.split_lines(b"", b"x" * (MAX_LINE_BYTES + 1))
         self.assertEqual((err.code, err.close, err.reason), (413, True, "line_too_long"))
