@@ -135,7 +135,7 @@ def publish(link, topic, payload):
     link.send(format_pub(topic, payload))
     # require PUB_ACK before sending the next PUB
     reply = link.read_reply()
-    if isinstance(reply. Err):
+    if isinstance(reply, Err):
         # broker sent invalid reply/syntax,
         # byte stream is corrupted, raise LinkError to abort session
         raise LinkError(f"bad__reply: {reply.reason}")
