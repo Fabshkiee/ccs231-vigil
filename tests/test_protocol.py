@@ -42,30 +42,35 @@ class TestRoundTrip(unittest.TestCase):
         self.assertEqual(r, p.Ok("SUB", {"topic": "sighting", "sub_id": "responseteam"}))
 
     def test_sub_ack(self):
-        self.assertEqual(p.parse_sub_ack(p.format_sub_ack("alert")).fields["topic"], "alert")
+        r = p.parse_sub_ack(p.format_sub_ack("alert")) 
+        self.assertEqual(r, p.Ok("SUB_ACK", {"topic": "alert"})) #P-01 FIX: was only fields["topic"]; now checks command name + all fields
 
     def test_pub_ack(self):
-        self.assertEqual(p.parse_pub_ack(p.format_pub_ack("e-8")).fields["event_id"], "e-8")
+        r = p.parse_pub_ack(p.format_pub_ack("e-8"))
+        self.assertEqual(r, p.Ok("PUB_ACK", {"event_id": "e-8"})) #P-01 FIX: was only fields["event_id"]; now also checks the command name
 
     def test_get_stats(self):
-        self.assertEqual(p.parse_get_stats(p.format_get_stats("alert")).cmd, "GET_STATS")
-
+        r = p.parse_get_stats(p.format_get_stats("alert"))
+        self.assertEqual(r, p.Ok("GET_STATS", {"topic": "alert"})) #P-01 FIX: was only .cmd; now also checks the topic
     def test_pub_pipe_in_payload(self):
         payload = {"note": "a|b", "sev": 5}
-        r=p.parse_pub(p.format_pub("sighting", payload))
-        self.assertEqual(r.fields["payload"], payload)
+        r = p.parse_pub(p.format_pub("sighting", payload))
+        self.assertEqual(r, p.Ok("PUB", {"topic": "sighting", "payload": payload})) #P-01 FIX: was only payload; now also command + topic
 
     def test_event(self):
-        ev= {"event_id": "x", "topic": "alert", "payload": {}, "created_at": 1.0}
-        self.assertEqual(p.parse_event(p.format_event(ev)).fields["event"], ev)
+        ev = {"event_id": "x", "topic": "alert", "payload": {}, "created_at": 1.0}
+        r = p.parse_event(p.format_event(ev))
+        self.assertEqual(r, p.Ok("EVENT", {"event": ev})) #P-01 FIX: was only fields["event"]; now also the command name
 
     def test_ack(self):
         r = p.parse_ack(p.format_ack("sighting", "responseteam", "e-8"))
-        self.assertEqual(r.fields["event_id"], "e-8")
+        self.assertEqual(
+            r, p.Ok("ACK", {"topic": "sighting", "sub_id": "responseteam", "event_id": "e-8"}) #P-01 FIX: was only event_id; now command, topic, sub_id and event_id
+        )
 
     def test_err(self):
         r = p.parse_err(p.format_err(400, "empty_topic"))
-        self.assertEqual((r.fields["code"], r.fields["message"]), (400, "empty_topic"))
+        self.assertEqual(r, p.Ok("ERR", {"code": 400, "message": "empty_topic"})) #P-01 FIX: was only code + message; now also the command name
 
     def test_dispatcher_matches_direct_parser(self):
         line = p.format_sub("sighting", "team")
@@ -104,14 +109,14 @@ class TestRejects(unittest.TestCase):
         for line, reason in cases:
             with self.subTest(line=line):
                 self.assertEqual(self.reason(line), reason)
-    
+
     def test_ack_rejects(self):
         r=p.parse_ack("ACK|a|b|")
         self.assertEqual(r.reason, "empty_event_id")
 
     def test_pub_ack_rejects(self):
-        self.assertEqual(p.parse_pub_ack("PUB_ACK|").reason, "empty_event_id")      
-    
+        self.assertEqual(p.parse_pub_ack("PUB_ACK|").reason, "empty_event_id")
+
     def test_event_rejects(self):
         self.assertEqual(self.reason("EVENT|{}"), "missing_event_id")
 
