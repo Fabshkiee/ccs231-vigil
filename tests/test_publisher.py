@@ -175,6 +175,10 @@ class BrokerLinkTests(unittest.TestCase):
         reply = self.link.read_reply()
         self.assertEqual((reply.cmd, reply.fields), ("PUB_ACK", {"event_id": "abc"}))
 
+    def test_closed_connection_raises_link_error(self):
+        self.broker_side.close()
+        with self.assertRaises(LinkError):
+            self.link.read_reply()
 
 if __name__ == "__main__":
     unittest.main()
