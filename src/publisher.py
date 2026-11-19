@@ -122,7 +122,7 @@ def connect(host, port, timeout):
     """open TCP connection; timeout applies to later send/recv"""
     return BrokerLink(socket.create_connection(host, port), timeout=timeout)
 
-def short_id(event_idd):
+def short_id(event_id):
     """First few chars of uuid for readable demo"""
     return event_id[:SHORT_ID_LEN]
 
