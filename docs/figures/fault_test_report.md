@@ -137,8 +137,7 @@ P-6 (PROTOCOLO TEST 6) Line framing and message size limit
 Protocol stage record
 Date and code version: November 14, 2026 — commit 51e70e3.
 Unit-test command actually run: python3 tests/test_protocol.py -v
-Number of tests run / failures / errors: 
-Output or evidence reference: 22 tests / 0 failures / 0 errors.
+Number of tests run / failures / errors: 22 tests / 0 failures / 0 errors.
 Checks still blocked or failing: 
 No failures occurred in the existing suite. Remaining coverage gaps:
     P-01: Some round-trip tests check only selected command names and fields.
@@ -151,7 +150,145 @@ Overall protocol checklist: INCOMPLETE pending the remaining checks.
 
     
 
+__________________________________________________________________________________________________________________________________
 
+
+
+STORAGE TESTING (DEVELOPER: JOHN MARK)
+Files that will be tested:src/common/storage.py.
+
+S-1 (STORAGE TEST 1) SAVE AND RELOAD EVENTS
+    Expected: 
+        The same accepted event IDs, topics, payloads, and order are recovered
+    Input Values:
+        Save Tests: 
+            Event ID 12, topic sighting, payload {}, created_at 2400
+            EVENT ID 13, topic readings, payload {}, created_at 1000
+        LOAD TEST:
+            A log containing event ID 4be5feca1c964528a343661b336d8c09, topic sighting, payload {"text": "chants", "severity": 2}, created_at 1730, and an empty alert list.
+    Command To Test used:
+        PYTHONPATH=tests python3 -m unittest test_storage.TestAppendEvents.test_ae_to_new_file test_storage.TestAppendEvents.test_ae_to_existing_file test_storage.TestLoadEvents.test_load_valid_events_file -v
+    Observed Results:
+        All three tests returned ok. Confirming that saving to a new file produced {'sighting":[event]} with the expected event values. Appending events under different topics preserved both events and their values. Loading the prepared log returned data equal to the original prepared data. The append tests found no remaining .tmp files.
+    Evidence / Log Reference: 
+        test_ae_to_new_file (test_storage.TestAppendEvents.test_ae_to_new_file) ... ok
+        test_ae_to_existing_file (test_storage.TestAppendEvents.test_ae_to_existing_file) ... ok
+        test_load_valid_events_file (test_storage.TestLoadEvents.test_load_valid_events_file) ... ok
+
+    ----------------------------------------------------------------------
+    Ran 3 tests in 0.002s
+
+    OK
+    Verdict: 
+        Partially Passed, All three checks have all passed. Saving multiple events to the same topic, reloading them through load_events(), and verifying their order remains untested.
     
 
     
+S-2 (STORAGE TEST 2) Atomic write and storage failure
+    Expected: 
+        Uses temporary file → fsync(file) → replace → fsync(directory). A failed save preserves previously committed data and reports the error.
+    Input Values:
+        The test first saved ["old_data"]. It then mocked os.replace() to raise OSError("Disk full") while attempting to save ["new_data"].
+    Command To Test used:
+        PYTHONPATH=tests python3 -m unittest test_storage.TestAtomicWrite -v
+    Observed Results:
+        All four tests were succesfull meaning their assertions confirmed that Successful writes saved the expected JSON, A normal overwrite replaced [1, 2, 3] with [4, 5, 6], The simulated replacement failure raised OSError, After that failure, the original file still contained ["old_data"]. No .tmp files remained after the tested overwrite and failure.The mocked directory-open, fsync, and close functions were called.
+    Evidence / Log Reference: 
+        test_aw_failure_cleanup (test_storage.TestAtomicWrite.test_aw_failure_cleanup) ... ok
+        test_aw_overwrite (test_storage.TestAtomicWrite.test_aw_overwrite) ... ok
+        test_aw_success (test_storage.TestAtomicWrite.test_aw_success) ... ok
+        test_aw_unix_directory_sync (test_storage.TestAtomicWrite.test_aw_unix_directory_sync) ... ok
+
+        ----------------------------------------------------------------------
+        Ran 4 tests in 0.003s
+
+        OK 
+    Verdict: 
+        Existing atomic-write tests all PASS 4/4.
+
+        Overall verification of S-2 INCOMPLETE pending directory-sync failure handling, sequence verification, and broker integration.
+
+S-3 (STORAGE TEST 3) CORRUPT STORE LOG
+    Expected: 
+        Raises StoreError rather than silently returning an empty log. Once integrated, the broker refuses to start with the corrupt log.
+    Input Values:
+        The test wrote [{bad json content or smth] into a temporary file, then called load_events() on that file.
+    Command To Test used:
+        PYTHONPATH=tests python3 -m unittest test_storage.TestLoadEvents.test_load_corrupted_events_file -v
+    Observed Results:
+        The test returned ok. Its assertRaises(StoreError) assertion confirmed that loading the corrupt file raised StoreError.
+    Evidence / Log Reference: 
+        test_load_corrupted_events_file (test_storage.TestLoadEvents.test_load_corrupted_events_file) ... ok
+
+        ----------------------------------------------------------------------
+        Ran 1 test in 0.001s
+
+        OK
+    Verdict: 
+        PASS for the storage-function check. Broker startup verification remains BLOCKED until integration.
+
+
+S-4 (STORAGE TEST 4) ACK OFFSETS AND PRUNING
+    Expected: 
+        Offsets remain independent and recover correctly. If pruning shifts indices, stored positions remain correct and never skip an unread event.
+    Input Values:
+        no event logs were used in this test
+
+        offset values included:
+            researcharchive: sighting=8, alert=2, responseteam: sighting=7, alert=1, An update advanced researcharchive’s sighting offset to 15, while preserving its alert offset at 2.
+    Prune Status: 
+        No pruning implementation is present in the supplied storage.py. Retention policy awaits team confirmation. Pruning was not tested.
+    Command To Test used: 
+        PYTHONPATH=tests python3 -m unittest test_storage.TestSaveOffset test_storage.TestLoadOffsets -v
+    Observed Results:
+        All six tests returned ok. With that we can assert that Saving preserved independent subscriber and topic entries, Updating one topic preserved the other topic’s offset, Loading a prepared offsets file returned the expected values, Missing or corrupt offsets files returned {}, A mocked storage failure raised OSError and left no .tmp files.
+    Evidence / Log Reference: 
+        test_so_to_existing_file (test_storage.TestSaveOffset.test_so_to_existing_file) ... ok
+        test_so_to_new_file (test_storage.TestSaveOffset.test_so_to_new_file) ... ok
+        test_so_when_disk_full (test_storage.TestSaveOffset.test_so_when_disk_full) ... ok
+        test_load_corrupted_offsets_file (test_storage.TestLoadOffsets.test_load_corrupted_offsets_file) ... ok
+        test_load_missing_offsets_file (test_storage.TestLoadOffsets.test_load_missing_offsets_file) ... ok
+        test_load_valid_offsets_file (test_storage.TestLoadOffsets. test_load_valid_offsets_file) ... ok
+
+        ----------------------------------------------------------------------
+        Ran 6 tests in 0.003s
+
+    OK
+    Verdict: 
+        Existing offset tests PASS 6/6. Combined save/reload verification remains untested; pruning verification awaits confirmation of the retention policy and implementation.
+
+Storage stage record
+Date and code version: November 15, 2026 - commit 728dfcc
+Unit-test command actually run: PYTHONPATH=tests python3 -m unittest test_storage -v
+Number of tests run / failures / errors: 16 tests / 0 failures / 0 errors.
+Output or evidence reference: 
+    test_ae_to_existing_file (test_storage.TestAppendEvents.test_ae_to_existing_file) ... ok
+    test_ae_to_new_file (test_storage.TestAppendEvents.test_ae_to_new_file) ... ok
+    test_ae_when_disk_full (test_storage.TestAppendEvents.test_ae_when_disk_full) ... ok
+    test_aw_failure_cleanup (test_storage.TestAtomicWrite.test_aw_failure_cleanup) ... ok
+    test_aw_overwrite (test_storage.TestAtomicWrite.test_aw_overwrite) ... ok
+    test_aw_success (test_storage.TestAtomicWrite.test_aw_success) ... ok
+    test_aw_unix_directory_sync (test_storage.TestAtomicWrite.test_aw_unix_directory_sync) ... ok
+    test_load_corrupted_events_file (test_storage.TestLoadEvents.test_load_corrupted_events_file) ... ok
+    test_load_missing_events_file (test_storage.TestLoadEvents.test_load_missing_events_file) ... ok
+    test_load_valid_events_file (test_storage.TestLoadEvents.test_load_valid_events_file) ... ok
+    test_load_corrupted_offsets_file (test_storage.TestLoadOffsets.test_load_corrupted_offsets_file) ... ok
+    test_load_missing_offsets_file (test_storage.TestLoadOffsets.test_load_missing_offsets_file) ... ok
+    test_load_valid_offsets_file (test_storage.TestLoadOffsets.test_load_valid_offsets_file) ... ok
+    test_so_to_existing_file (test_storage.TestSaveOffset.      test_so_to_existing_file) ... ok
+    test_so_to_new_file (test_storage.TestSaveOffset.test_so_to_new_file) ... ok
+    test_so_when_disk_full (test_storage.TestSaveOffset.test_so_when_disk_full) ... ok
+
+    ----------------------------------------------------------------------
+    Ran 16 tests in 0.007s
+
+    OK
+Checks still blocked or failing: 
+    No failures occured in the existing code. But some gaps and questions that are needed to be checked:
+    S-01: Save multiple events to the same topic, reload them using load_events(), and verify their values and order.
+    S-02: Verify the atomic-write call order and test directory-sync failures. The supplied implementation silently ignores directory-sync errors.
+    S-02 — Broker integration: Verify that storage failure produces error 503, no fan-out, and no PUB_ACK.
+    S-03 — Broker integration: Verify that the broker refuses to start with a corrupt event log.
+    S-04: Save offsets using save_offset(), then reload the same data using load_offsets().
+    S-04: Confirm the retention policy and whether pruning will be implemented.
+Stage verdict: Overall unit-test suite PASSED 16/16. Overal storage checlist invomplete, outstanding checks and integration verifcation.
