@@ -114,7 +114,7 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 		for subscriber, sub_id in subscriptions_copy:
 			try:
 				_send_line(subscriber, event_msg)
-				logger.info("broker", f"sent {event["topic"]} | {event["event_id"]}")
+				logger.info("broker", f"sent {event['topic']} | {event['event_id']}")
 			except (ConnectionError, OSError):
 				logger.warn("broker", f"{sub_id} is unresponsive")
 				logger.info("broker", f"dropped {sub_id} from {topic}")
