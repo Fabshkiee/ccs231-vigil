@@ -82,7 +82,7 @@ class BrokerLink:
     def __init__(self, sock):
         # accept existing socket for unit testing
         # tests hand in socketpair() instead of real network connection
-        self.sock = socket 
+        self.sock = sock
         self._buffer = b""
         self._lines = []
 
