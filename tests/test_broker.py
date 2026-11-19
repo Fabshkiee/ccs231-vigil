@@ -161,7 +161,7 @@ class TestBrokerConnection(ut.TestCase):
 		# assert 1: publisher receives a 503 error message
 		pub_response = self.pub_file.readline().strip()
 		self.assertIn("503", pub_response)
-		self.assertIn("Disk full", pub_response)
+		self.assertIn("store failure", pub_response)
 
 		# assert 2: subscriber never received the unsaved event
 		with self.assertRaises(TimeoutError):

@@ -93,7 +93,8 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 	try:
 		storage.append_event(payload)
 	except (storage.StoreError, OSError) as e:
-		_send_err(client, 503, str(e))
+		logger.warn("broker", str(e))
+		_send_err(client, 503, "store failure")
 		return
 
 	# save successful: copy current subscription list before operation
@@ -123,7 +124,8 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 		offsets = storage.load_offsets()
 		topic_events = storage.load_events().get(topic, [])
 	except (storage.StoreError, OSError) as e:
-		_send_err(client, 503, str(e))
+		logger.warn("broker", str(e))
+		_send_err(client, 503, "store failure")
 		return
 
 	# proceed if offsets loaded
@@ -146,7 +148,8 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 			try:
 				topic_events = storage.load_events().get(topic, [])
 			except (storage.StoreError, OSError) as e:
-				_send_err(client, 503, str(e))
+				logger.warn("broker", str(e))
+				_send_err(client, 503, "store failure")
 				return
 				
 			# get the latest total count of events[topic] 
@@ -163,7 +166,8 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 		offsets = storage.load_offsets()
 		events = storage.load_events()
 	except (storage.StoreError, OSError) as e:
-		_send_err(client, 503, str(e))
+		logger.warn("broker", str(e))
+		_send_err(client, 503, "store failure")
 		return
 
 	topic_events = events.get(topic, [])
@@ -188,7 +192,8 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 			storage.save_offset(sub_id, topic, matched_idx)
 			logger.info("broker", f"ack {sub_id} on {topic} -> offset {matched_idx}")
 	except (storage.StoreError, OSError) as e:
-		_send_err(client, 503, str(e))
+		logger.warn("broker", str(e))
+		_send_err(client, 503, "store failure")
 		return	
 
 # def _handle_get_stats(client: sck.socket, topic: str) -> None:
