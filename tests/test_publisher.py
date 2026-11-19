@@ -1,9 +1,15 @@
-import os, sys, unittest, contextlib, io
+import os, sys, unittest, contextlib, io, random, socket, threading, unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from publisher import parse_typed_line, needs_alert, parse_args
+from publisher import ( 
+    parse_typed_line, needs_alert, parse_args, BrokerLink, BrokerRejected,
+    LinkError, READING_MAX, READING_MIN, build_payload, handle_line, make_reading,
+    publish, short_id
+)
+from common.protocol import Ok, Err, format_pub
 
+LONG_ID = "a" * 32 # what real uuid2 looks like
 
 class ParseTypedLineTests(unittest.TestCase):
     def test_valid_lines(self):
@@ -73,6 +79,50 @@ class ParseArgsTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
                 parse_args(["--as", "Nobody"])
+
+class FakeLink:
+    """stands in for BrokerLink, records sends, replays scripted replies"""
+
+    # create lists in memory to record pub sends and broker answers
+    def __init__(self, replies=()):
+        self.sent = []
+        self._replies = list(replies)
+
+    def send(self, line):
+        self.sent.append(line)
+
+    def read_reply(self):
+        return self._replies.pop(0)
+
+
+def run_quietly(func, *args):
+    """call func while capturing what it prints, return the printed text"""
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        func(*args)
+    return out.getvalue()
+
+class PayloadTests(unittest.TestCase):
+    def test_short_id(self):
+        self.assertEqual(short_id(LONG_ID), "aaaaaaaa")
+
+    def test_build_payload(self):
+        self.assertEqual(
+            build_payload("chanak sighting", 5, "SightingReports"),
+            {"kind": "chanak sighting", "sev": 5, "source": "SightingReports"},
+        )
+
+    def test_readings_are_repeatable_and_in_range(self):
+        first = [make_reading(random.Random(7), "ParanormalReadings") for _ in range(1)]
+        again = [make_reading(random.Random(7), "ParanormalReadings") for _ in range(1)]
+        self.assertEqual(first, again)          # same seed -> same reading
+        rng = random.Random(1)
+        for _ in range(50):
+            reading = make_reading(rng, "ParanormalReadings")
+            self.assertEqual(set(reading), {"kind", "zone", "level", "source"})
+            self.assertTrue(READING_MIN <= reading["level"] <= READING_MAX)
+            self.assertNotIn("sev", reading)    # readings never carry severity
+
+
 
 if __name__ == "__main__":
     unittest.main()
