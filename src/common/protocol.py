@@ -140,7 +140,14 @@ def parse_err(line):
         return _bad("bad_field_count")
     if not (parts[1].isascii() and parts[1].isdigit()):
         return _bad("bad_code")
-    return Ok("ERR", {"code": int(parts[1]), "message": parts[2]})
+
+    # If error code does not exist in ErrorCode
+    try:
+        code = ErrorCode(int(parts[1]))
+    except ValueError:
+        return _bad("bad_code")
+    
+    return Ok("ERR", {"code": code, "message": parts[2]})
 
 
 #format
@@ -156,8 +163,8 @@ def format_pub(topic, payload):
 def format_event(event):
     return f"EVENT|{json.dumps(event, separators=(',', ':'))}"
 
-def format_err(code, message):
-    return f"ERR|{code}|{_field(message)}"
+def format_err(code: ErrorCode, message):
+    return f"ERR|{code.value}|{_field(message)}"
 
 
 
