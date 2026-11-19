@@ -56,7 +56,7 @@ def _send_err(client: sck.socket, err_code: prot.ErrorCode, reason: str) -> None
 	"""Helper function that encodes and sends error message to client"""
 	clean_reason = reason.replace("|", "/").replace("\n", " ").replace("\r", "")
 	try:
-		_send_line(client, prot.format_err(err_code.value, clean_reason))
+		_send_line(client, prot.format_err(err_code, clean_reason))
 	except (ConnectionError, OSError):
 		pass # there is nobody on the other end
 
