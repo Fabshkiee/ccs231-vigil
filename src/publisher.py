@@ -236,6 +236,8 @@ def main(argv=None):
         # event twice, print the problem and exit so the operator decides
         warn("pub", "link_failed", str(exc))
         return 1
+    except KeyboardInterrupt:
+        print()
     finally:
         link.close() # cleanup, close tcp socket
     return 0
