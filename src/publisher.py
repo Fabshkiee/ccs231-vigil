@@ -3,7 +3,7 @@
 # that decision belongs here, not in the broker, because the broker is only
 # allowed to route by topic.
 import argparse
-
+import re
 from common.constants import SEV_MIN, SEV_MAX, ALERT_MIN_SEV
 from common.log import warn, info
 
@@ -29,13 +29,14 @@ def parse_typed_line(raw):
     """Splits 'chanak sighting, severity 5' into ((kind, sev), None) or (None, reason)"""
     cleaned = raw.strip()
     # validate text
-    idx = cleaned.lower().rfind(SEV_WORD) # take last severity instance
-    if idx == -1:
+    matches = list(re.finditer(rf"\b{SEV_WORD}\b", cleaned, re.IGNORECASE))
+    if not matches:
         return None, "missing_severity"
-    kind = cleaned[:idx].strip().rstrip(",").strip()
+    last_match = matches[-1]
+    kind = cleaned[:last_match.start()].strip().rstrip(",").strip()
     if not kind:
         return None, "empty_text"
-    sev_text = cleaned[idx + len(SEV_WORD):].strip()
+    sev_text = cleaned[last_match.end():].strip()
     # validate severity
     if not (sev_text.isascii() and sev_text.isdigit()):
         return None, "bad_severity"
