@@ -27,6 +27,9 @@ class ParseTypedLineTests(unittest.TestCase):
             # missing required keyword
             "": "missing_severity",
             "chanak sighting": "missing_severity",
+            #keyword must be whole
+            "myseverity 5": "missing_severity",
+            "severityseverity 5": "missing_severity",
             # missing/malformed integer value
             "chanak, severity": "bad_severity",
             "chanak, severity abc": "bad_severity",

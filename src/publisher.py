@@ -48,7 +48,7 @@ def parse_typed_line(raw):
 # fan-out alert from valid roles only
 def needs_alert(role, sev):
     """true when a second PUB on the 'alert' topic must be sent"""
-    may_alert = ROLES[role][1]
+    may_alert = ROLES.get(role, (None, False))[1]
     return may_alert and sev >= ALERT_MIN_SEV
 
 # Prompt loop
