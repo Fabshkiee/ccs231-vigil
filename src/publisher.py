@@ -177,26 +177,69 @@ def handle_line(link, role, raw):
         # skip the alert, since nothing was saved 
         warn("pub", "broker_rejected", str(exc))
 
-# Prompt loop
-def main(argv=None):
-    """demo loop: validate typed lines and show what would be sent"""
-    role = parse_args(argv).role
+def make_reading(rng, role):
+    """one ambient reading"""
+    # no 'sev' key, readings are routine nums, not incidents, they never alert
+    return {
+        "kind": "ambient reading",
+        "zone": rng.choice(ZONES),
+        "level": rng.randint(READING_MIN, READING_MAX),
+        "source": role,
+    }
+
+def run_auto(link, role, interval):
+    """ParanormalReadings mode, publish a reading every 'interval' seconds."""
     topic = ROLES[role][0]
-    info("pub", f"{role} -> topic '{topic}' (validation only, nothing is sent yet)")
+    rng = random(READING_SEED)   # own generator, not the global one
+    # print status startup status line showing target topic and publish interval
+    info("pub", f"{role} streaming to '{topic}' every {interval}s (Ctrl+C to stop)")
+    # run continuously
+    while True:
+        # build one reading dictionary, sends json over the socket,
+        # blocks for PUB_ACK, and prints line confirmation
+        publish_and_print(link, make_reading(rng, role))
+        # pause loop to follow interval
+        time.sleep(interval)
+
+def run_typed(link, role):
+    """SightingReports / PoltergeistActivity mode, one typed line, one event."""
+    # run continuously, read a typed report one at a time
     while True:
         try:
-            raw = input(f"{role}> ")
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        parsed, reason = parse_typed_line(raw)
-        if reason:
-            # Validate before any socket, rejected line must cause zero traffic.
-            warn("pub", reason, raw)
-            continue
-        kind, sev = parsed
-        info("pub", f"would send {topic}: kind={kind!r} sev={sev} alert={needs_alert(role, sev)}")
+            raw = input(f"{role}: ") # prompt input
+        except EOFError:
+            return
+        handle_line(link, role, raw)
+
+
+def main(argv=None):
+    """connect, run the mode for this role, and return an exit code"""
+    args = parse_args(argv)
+    role = args.role
+    try:
+        # open tcp connection to the broker
+        link = connect(args.host, PORT, PUB_ACK_TIMEOUT_S)
+    except OSError as exc:
+        # if broker isn't running/unreachable
+        warn("pub", "cannot_connect", f"{args.host}:{PORT} {exc}")
+        return 1
+    # confirm connection
+    info("pub", f"{role} connected to {args.host}:{PORT}")
+    try:
+        # route execution based on role
+        if role == AUTO_ROLE:
+            run_auto(link, role, args.interval)
+        else:
+            run_typed(link, role)
+    except LinkError as exc:
+        # no silent retry (Flows §8): a retry after a timeout could save the
+        # event twice, print the problem and exit so the operator decides
+        warn("pub", "link_failed", str(exc))
+        return 1
+    finally:
+        link.close() # cleanup, close tcp socket
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
