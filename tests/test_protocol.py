@@ -129,5 +129,24 @@ class TestRejects(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertEqual(p.parse_err(line).reason, "bad_code")
 
+    def test_missing_and_extra_fields(self):           #P-02 NEW test: every command rejects too few AND too many fields
+        cases = [
+            "SUB", "SUB|a", "SUB|a|b|c",               #P-02 FIX: SUB needs exactly 3 fields (missing + extra)
+            "SUB_ACK", "SUB_ACK|a|b",                  #P-02 FIX: SUB_ACK needs exactly 2 fields
+            "PUB_ACK", "PUB_ACK|a|b",                  #P-02 FIX: PUB_ACK needs exactly 2 fields
+            "GET_STATS", "GET_STATS|a|b",              #P-02 FIX: GET_STATS needs exactly 2 fields
+            "ACK", "ACK|a", "ACK|a|b", "ACK|a|b|c|d",  #P-02 FIX: ACK needs exactly 4 fields
+            "PUB",                                     #P-02 FIX: PUB with no topic and no payload
+            "EVENT",                                   #P-02 FIX: EVENT with no payload
+            "ERR", "ERR|400",                          #P-02 FIX: ERR needs a code and a message
+        ]
+        for line in cases:
+            with self.subTest(line=line):
+                self.assertEqual(self.reason(line), "bad_field_count") #P-02 FIX: rejected, never repaired
+
+    def test_extra_pipe_in_pub_and_event_is_payload(self):             #P-02 NEW test: PUB/EVENT allow '|' in the last field
+        self.assertEqual(self.reason("PUB|sighting|{}|x"), "bad_json") #P-02 FIX: extra '|' becomes part of the JSON, so bad_json not bad_field_count
+        self.assertEqual(self.reason("EVENT|{}|x"), "bad_json")        #P-02 FIX: same rule for EVENT
+
 if __name__ == "__main__":
     unittest.main()
