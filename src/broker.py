@@ -17,6 +17,7 @@ import common.storage as storage
 BROKER_HOST = "localhost" # change to "0.0.0.0" if receiving external network instead
 sub_lock = thr.Lock()
 client_send_locks: dict[sck.socket, thr.Lock] = {}
+topic_locks: dict[str, thr.Lock] = {}
 subscriptions: dict[str, list[tuple]] = {} # topic -> [(client, sub_id)]
 clients: dict[sck.socket, str] = {} # client -> sub_id
 
@@ -32,6 +33,11 @@ def _get_send_lock(client: sck.socket) -> thr.Lock:
 			lock = thr.Lock()
 			client_send_locks[client] = lock
 		return lock
+
+def _get_topic_lock(topic: str) -> thr.Lock:
+	"""One lock per topic so append and fan-out move as a single step."""
+	with sub_lock:
+		return topic_locks.setdefault(topic, thr.Lock())
 
 def _send_line(client: sck.socket, wire_msg: str) -> None:
 	"""
@@ -88,35 +94,37 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 		"created_at": time.time(),
 	}
 
-	# try to save the event in log file
-	try:
-		storage.append_event(event)
-	except (storage.StoreError, OSError) as e:
-		logger.warn("broker", str(e))
-		_send_err(client, 503, "store failure")
-		return
-
-	# save successful: copy current subscription list before operation
-	with sub_lock:
-		subscriptions_copy = subscriptions.get(topic, []).copy()
-
-	# track empty sockets
-	dead_subscribers: list[sck.socket] = []
-	event_msg: str = prot.format_event(event)
-	for subscriber, sub_id in subscriptions_copy:
+	# §4: per-topic order — append and fan-out move as one step
+	with _get_topic_lock(topic):
+		# try to save the event in log file
 		try:
-			_send_line(subscriber, event_msg)
-			logger.info("broker", f"sent {event["topic"]} | {event["event_id"]}")
-		except (ConnectionError, OSError):
-			logger.warn("broker", f"{sub_id} is unresponsive")
-			logger.info("broker", f"dropped {sub_id} from {topic}")
-			dead_subscribers.append(subscriber)
+			storage.append_event(event)
+		except (storage.StoreError, OSError) as e:
+			logger.warn("broker", str(e))
+			_send_err(client, 503, "store failure")
+			return
 
-	if dead_subscribers:
-		_drop_dead_sockets(dead_subscribers)
+		# save successful: copy current subscription list before operation
+		with sub_lock:
+			subscriptions_copy = subscriptions.get(topic, []).copy()
 
-	# reply pub_ack with event_id
-	_send_line(client, prot.format_pub_ack(event["event_id"]))
+		# track empty sockets
+		dead_subscribers: list[sck.socket] = []
+		event_msg: str = prot.format_event(event)
+		for subscriber, sub_id in subscriptions_copy:
+			try:
+				_send_line(subscriber, event_msg)
+				logger.info("broker", f"sent {event["topic"]} | {event["event_id"]}")
+			except (ConnectionError, OSError):
+				logger.warn("broker", f"{sub_id} is unresponsive")
+				logger.info("broker", f"dropped {sub_id} from {topic}")
+				dead_subscribers.append(subscriber)
+
+		if dead_subscribers:
+			_drop_dead_sockets(dead_subscribers)
+
+		# reply pub_ack with event_id
+		_send_line(client, prot.format_pub_ack(event["event_id"]))
 
 def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 	try:

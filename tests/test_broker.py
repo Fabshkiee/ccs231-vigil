@@ -1,3 +1,4 @@
+import json
 import socket as sck
 import threading as thr
 import time as t
@@ -131,6 +132,42 @@ class TestBrokerConnection(ut.TestCase):
 			self.assertEqual(remaining_subs, ["sub_live"])
 			self.assertNotIn(dead_broker_sock, broker.clients)
 			self.assertIn(broker_sub_sock, broker.clients)
+
+	def test_publishes_keep_log_order(self):
+		"""Two publishers on one topic must reach the subscriber in log order."""
+		topic = "sightings"
+		sent: list[str] = []
+		appended: list[str] = []
+		first_appended = thr.Event()
+		real_append = broker.storage.append_event
+
+		def slow_first_append(event):
+			real_append(event)
+			appended.append(event["event_id"])
+			if len(appended) == 1:
+				first_appended.set()
+				t.sleep(0.2)
+
+		def record_send(_client, wire):
+			sent.append(wire)
+
+		with broker.sub_lock:
+			broker.subscriptions[topic] = [(object(), "sub_order")]
+
+		with patch("broker.storage.append_event", side_effect=slow_first_append), \
+				patch("broker._send_line", side_effect=record_send):
+			first = thr.Thread(target=broker._handle_pub, args=(object(), topic, {"kind": "A"}))
+			first.start()
+			first_appended.wait(timeout=2)
+			broker._handle_pub(object(), topic, {"kind": "B"})
+			first.join(timeout=2)
+
+		self.assertFalse(first.is_alive())
+		kinds = [
+			json.loads(wire.split("|", 1)[1])["payload"]["kind"]
+			for wire in sent if wire.startswith("EVENT|")
+		]
+		self.assertEqual(kinds, ["A", "B"])
 
 	@patch("broker.storage.append_event", side_effect=OSError("Disk full"))
 	def test_broker_fails_to_save_event_returns_503_and_aborts_broadcast(self, mock_append):
