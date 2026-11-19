@@ -50,10 +50,15 @@ class TestBrokerConnection(ut.TestCase):
 			broker.clients.clear()
 			broker.client_send_locks.clear()
 
-	def _assert_log_written(self, filepath: str, topic: str):
-		with open(filepath, "r", encoding="utf-8") as log_f:
-			contents = log_f.read()
-		self.assertIn(topic, contents)
+	def _assert_event_logged(self, topic: str, event_id: str):
+		with open(consts.EVENT_LOG_FILE, "r", encoding="utf-8") as log_f:
+			events = json.load(log_f)
+		self.assertIn(event_id, [e["event_id"] for e in events.get(topic, [])])
+
+	def _assert_offsets_written(self, sub_id: str, topic: str):
+		with open(consts.OFFSETS_FILE, "r", encoding="utf-8") as offsets_f:
+			offsets = json.load(offsets_f)
+		self.assertIn(topic, offsets[sub_id])
 	
 	def _acked_event_id(self, response: str) -> str:
 		parsed = prot.parse_pub_ack(response)
@@ -90,10 +95,10 @@ class TestBrokerConnection(ut.TestCase):
 
 		# assert 1: broker replied with pub_ack
 		response = self.pub_file.readline().strip()
-		self._acked_event_id(response)
+		event_id = self._acked_event_id(response)
 
-		# assert 2: verify event_log.json was written
-		self._assert_log_written(consts.EVENT_LOG_FILE, topic)
+		# assert 2: the acked event is the one in event_log.json
+		self._assert_event_logged(topic, event_id)
 
 	def test_broker_broadcasts_to_subscribers_and_drops_dead(self):
 		"""
@@ -309,7 +314,7 @@ class TestBrokerConnection(ut.TestCase):
 
 		self.assertGreater(second_idx, first_idx)
 		self.assertTrue(os.path.exists(consts.OFFSETS_FILE))
-		self._assert_log_written(consts.OFFSETS_FILE, "sightings")
+		self._assert_offsets_written("sub_ack_1", "sightings")
 
 	def test_ack_ignores_duplicate_and_stale_ack(self):
 		ev1, ev2 = self._pub_event(), self._pub_event()
