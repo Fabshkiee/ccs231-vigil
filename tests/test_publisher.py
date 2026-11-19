@@ -141,6 +141,19 @@ class PublishTests(unittest.TestCase):
                 with self.assertRaises(LinkError):
                     publish(FakeLink([reply]), "sighting", {"kind": "x"})
 
+class HandleLineTests(unittest.TestCase):
+    ACK = Ok("PUB_ACK", {"event_id": LONG_ID}) # fake ACK
+
+    def test_high_severity_sends_event_then_alert_with_same_payload(self):
+        link = FakeLink([self.ACK, self.ACK])
+        out = run_quietly(handle_line, link, "SightingReports", "chanak, severity 5")
+        self.assertEqual(len(link.sent), 2) # 
+        self.assertTrue(link.sent[0].startswith("PUB|sighting|"))
+        self.assertTrue(link.sent[1].startswith("PUB|alert|"))
+        # same payload text after the second '|' on both lines.
+        self.assertEqual(link.sent[0].split("|", 2)[2], link.sent[1].split("|", 2)[2])
+        self.assertIn("saved (sighting)", out)
+        self.assertIn("saved (alert)", out)
 
 if __name__ == "__main__":
     unittest.main()
