@@ -224,6 +224,7 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 
 def _handle_no_command(client: sck.socket, cmd: str) -> None:
 	logger.info("broker", f"ignored unknown command from {client.getpeername()}: {cmd}")
+	_send_err(client, 400, "unsupported_command")
 
 def handle_client(client: sck.socket, addr):
 	logger.info("broker", f"new connection from {addr}")

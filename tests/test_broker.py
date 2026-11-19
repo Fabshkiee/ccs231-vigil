@@ -72,6 +72,12 @@ class TestBrokerConnection(ut.TestCase):
 		ip, port = self.pub_sock.getpeername()
 		self.assertEqual(port, consts.PORT, f"{[port]} is not {consts.PORT}")
 
+	def test_unhandled_command_gets_400(self):
+		"""A request this broker cannot serve must not be met with silence."""
+		sock, f = self._connect_client()
+		sock.sendall(b"SUB_ACK|sightings\n")
+		self.assertIn("ERR|400", f.readline())
+
 	def test_broker_save_event_and_returns_pub_ack(self):
 		topic = "sightings"
 		pub_line = prot.format_pub(topic, self._get_test_pub_payload()) + "\n"
