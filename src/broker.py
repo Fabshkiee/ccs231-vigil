@@ -230,7 +230,7 @@ def handle_client(client: sck.socket, addr):
 	logger.info("broker", f"new connection from {addr}")
 	
 	try:
-		with client, client.makefile("rb", encoding="utf-8") as client_file:
+		with client, client.makefile("rb") as client_file:
 			while True:
 				raw_line: bytes = client_file.readline(consts.MAX_LINE_BYTES + 1)
 				if not raw_line:
