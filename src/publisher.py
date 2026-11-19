@@ -208,6 +208,7 @@ def run_typed(link, role):
         try:
             raw = input(f"{role}: ") # prompt input
         except EOFError:
+            print()
             return
         handle_line(link, role, raw)
 
