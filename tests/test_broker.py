@@ -25,7 +25,12 @@ class TestBrokerConnection(ut.TestCase):
 			daemon=True,
 		)
 		cls.server_thread.start()
-		t.sleep(0.1)
+		for _ in range(50):
+			try:
+				sck.create_connection(ADDRESS, timeout=0.1).close()
+				break
+			except OSError:
+				t.sleep(0.02)
 
 		cls.pub_sock = sck.socket(sck.AF_INET, sck.SOCK_STREAM)
 		cls.pub_sock.settimeout(2.0)
