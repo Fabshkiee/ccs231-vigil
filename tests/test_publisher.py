@@ -160,5 +160,21 @@ class HandleLineTests(unittest.TestCase):
         run_quietly(handle_line, link, "SightingReports", "footsteps, severity 3")
         self.assertEqual(len(link.sent), 1)
 
+class BrokerLinkTests(unittest.TestCase):
+    def setUp(self):
+        self.mine, self.broker_side = socket.socketpair()
+        self.mine.settimeout(1)
+        self.link = BrokerLink(self.mine)
+
+    def tearDown(self):
+        self.mine.close()
+        self.broker_side.close()
+
+    def test_reads_one_line(self):
+        self.broker_side.sendall(b"PUB_ACK|abc\n")
+        reply = self.link.read_reply()
+        self.assertEqual((reply.cmd, reply.fields), ("PUB_ACK", {"event_id": "abc"}))
+
+
 if __name__ == "__main__":
     unittest.main()
