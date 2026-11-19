@@ -180,5 +180,10 @@ class BrokerLinkTests(unittest.TestCase):
         with self.assertRaises(LinkError):
             self.link.read_reply()
 
+    def test_timeout_raises_link_error(self):
+        self.mine.settimeout(0.2)
+        with self.assertRaises(LinkError):
+            self.link.read_reply()
+
 if __name__ == "__main__":
     unittest.main()
