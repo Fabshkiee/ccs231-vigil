@@ -7,6 +7,14 @@ import json
 from dataclasses import dataclass
 from common.constants import MAX_LINE_BYTES
 from common.ids import normalise_id
+from enum import Enum
+
+class ErrorCode(Enum):
+    # To get the literal value (e.g, 400), call the value method (ex: ErrorCode.BAD_REQUEST.value)
+    BAD_REQUEST = 400
+    CONTENT_TOO_LARGE = 413
+    UNPROCESSABLE_CONTENT = 422
+    SERVICE_UNAVAILABLE = 503
 
 @dataclass(frozen=True)
 class Ok:
@@ -15,7 +23,7 @@ class Ok:
 
 @dataclass(frozen=True)
 class Err:
-    code: int
+    code: ErrorCode
     reason: str
     close: bool = False
 
@@ -23,12 +31,12 @@ def split_lines(buffer, data):
     buf = buffer + data
     *complete, rest = buf.split(b"\n")
     if any(len(line) > MAX_LINE_BYTES for line in complete) or len(rest) > MAX_LINE_BYTES:
-        return [], b"", Err(413, "line_too_long", close=True)
+        return [], b"", Err(ErrorCode.CONTENT_TOO_LARGE, "line_too_long", close=True)
     return complete, rest, None
 
 #_helpers
 def _bad(reason):
-    return Err(400, reason)
+    return Err(ErrorCode.BAD_REQUEST, reason)
 
 def _field(value):
     if "|" in value or "\n" in value:
