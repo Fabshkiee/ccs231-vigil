@@ -328,7 +328,7 @@ class TestBrokerConnection(ut.TestCase):
 
 		self.assertEqual(broker.storage.load_offsets()["sub_ack_2"]["sightings"], saved_idx)
 
-	def test_ack_unknown_event_returns_442(self):
+	def test_ack_unknown_event_returns_422(self):
 		other_ev = self._pub_event("readings")
 		client = MagicMock()
 
