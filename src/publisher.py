@@ -190,7 +190,7 @@ def make_reading(rng, role):
 def run_auto(link, role, interval):
     """ParanormalReadings mode, publish a reading every 'interval' seconds."""
     topic = ROLES[role][0]
-    rng = random(READING_SEED)   # own generator, not the global one
+    rng = random.Random(READING_SEED)   # own generator, not the global one
     # print status startup status line showing target topic and publish interval
     info("pub", f"{role} streaming to '{topic}' every {interval}s (Ctrl+C to stop)")
     # run continuously
