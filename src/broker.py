@@ -144,6 +144,7 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 	_send_line(client, prot.format_sub_ack(topic))
 
 	# replay events
+	displaced: list[sck.socket] = []
 	while True:
 		missed_events = topic_events[next_idx:]
 		for event in missed_events:
@@ -162,11 +163,26 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 			# get the latest total count of events[topic] 
 			if next_idx >= len(topic_events):
 				clients[client] = sub_id
+				# §5/F-07: a re-SUB with the same sub_id replaces the old socket
+				for t, subs in subscriptions.items():
+					displaced += [c for c, s in subs if s == sub_id and c is not client]
+					subscriptions[t] = [(c, s) for c, s in subs if s != sub_id or c is client]
+				for old in displaced:
+					clients.pop(old, None)
+					client_send_locks.pop(old, None)
 				# add subscriber to subscriptions[topic] via in-place mutation (no rebuilding)
 				topic_subs = subscriptions.setdefault(topic, [])
 				if not any(c is client for c, _ in topic_subs):
 					topic_subs.append((client, sub_id))
 				break
+
+	# close replaced sockets outside the lock so their threads wake and exit
+	for old in displaced:
+		try:
+			old.shutdown(sck.SHUT_RDWR)
+		except OSError:
+			pass
+		old.close()
 		
 def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> None:
 	try:

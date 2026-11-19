@@ -254,6 +254,25 @@ class TestBrokerConnection(ut.TestCase):
 		self.assertEqual(broker.subscriptions.get("sightings", []), [])
 		self.assertNotIn(fake_client, broker.clients)
 
+	def test_resub_replaces_the_old_socket(self):
+		"""A second SUB with the same sub_id must replace the first socket."""
+		topic = "sightings"
+		old_sock, old_peer = sck.socketpair()
+		new_sock, new_peer = sck.socketpair()
+		self.addCleanup(old_peer.close)
+		self.addCleanup(new_sock.close)
+		self.addCleanup(new_peer.close)
+
+		with patch("broker.storage.load_offsets", return_value={}), \
+				patch("broker.storage.load_events", return_value={}):
+			broker._handle_sub(old_sock, topic, "dupe")
+			broker._handle_sub(new_sock, topic, "dupe")
+
+		with broker.sub_lock:
+			subs = broker.subscriptions.get(topic, [])
+		self.assertEqual([c for c, _ in subs], [new_sock])
+		self.assertNotIn(old_sock, broker.clients)
+
 	# Test broker._handle_ack
 	def _pub_event(self, topic: str = "sightings") -> str:
 		self.pub_sock.sendall((prot.format_pub(topic, self._get_test_pub_payload()) + "\n").encode("utf-8"))
