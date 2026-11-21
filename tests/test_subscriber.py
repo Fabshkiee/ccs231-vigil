@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from common.protocol import Err, Ok
 from subscriber import (
     LIVE_POLL_S, RED, SUBSCRIBERS, YELLOW, BrokerLink, LinkError, ReadTimeout,
-    describe
+    describe, format_event_line,
 )
 
 LONG_ID = "a" * 32
@@ -67,6 +67,11 @@ class FormattingTests(unittest.TestCase):
             with self.subTest(payload=payload):
                 self.assertEqual(describe(payload), expected)
 
+def test_format_event_line(self):
+        self.assertEqual(
+            format_event_line(make_event()),
+            "Event aaaaaaaa — sighting: chanak sighting, severity 5",
+        )
 
 if __name__ == "__main__":
     unittest.main()
