@@ -60,7 +60,7 @@ class FormattingTests(unittest.TestCase):
             ({"kind": "chanak sighting", "sev": 5}, "chanak sighting, severity 5"),
             ({"kind": "ambient reading", "zone": "zone-b", "level": 42},
              "ambient reading, zone-b, level 42"),
-            ({}, "unknown") # empty payload fallback, not raise KeyError
+            ({}, "unknown"), # empty payload fallback, not raise KeyError
             ({"kind": "a\nb\tc"}, "a b c"),
         ]
         for payload, expected in cases:
