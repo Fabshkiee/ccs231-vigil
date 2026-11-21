@@ -130,6 +130,21 @@ class ParseArgsTests(unittest.TestCase):
         self.assertIn("readings", SUBSCRIBERS["ResearchArchive"])
         self.assertNotIn("readings", SUBSCRIBERS["ResponseTeam"]) # ignores ambient
 
+class SubscribeTests(unittest.TestCase):
+    def test_sends_one_sub_per_topic_and_waits_for_every_ack(self):
+        link = FakeLink([Ok("SUB_ACK", {"topic": "sighting"}),
+                         Ok("SUB_ACK", {"topic": "poltergeist"})])
+        with contextlib.redirect_stdout(io.StringIO()):
+            subscribe(link, "responseteam", ("sighting", "poltergeist"))
+        self.assertEqual(link.sent, ["SUB|sighting|responseteam",
+                                     "SUB|poltergeist|responseteam"])
+
+    def test_unexpected_ack_is_warned_not_fatal(self):
+        link = FakeLink([Ok("SUB_ACK", {"topic": "other"}),
+                         Ok("SUB_ACK", {"topic": "sighting"})])
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            subscribe(link, "responseteam", ("sighting",))
+        self.assertIn("unexpected_sub_ack", out.getvalue())
 
 if __name__ == "__main__":
     unittest.main()
