@@ -33,6 +33,12 @@ class TestBuffering(unittest.TestCase):
         lines, rest, _ = p.split_lines(rest, b"team\n")
         self.assertEqual(lines, [b"SUB|sighting|team"])
 
+    def test_complete_line_then_unfinished_line_in_one_chunk(self):             #P-07 NEW test
+        lines, rest, err = p.split_lines(b"", b"SUB|a|b\nPUB|sig")              #one complete line + an unfinished one in the same chunk
+        self.assertEqual((lines, rest, err), ([b"SUB|a|b"], b"PUB|sig", None))  #P-07 FIX: complete line returned, unfinished part stays buffered, no error
+        lines, rest, err = p.split_lines(rest, b'hting|{}\n')                   #P-07 FIX: next chunk finishes the kept tail
+        self.assertEqual((lines, rest, err), ([b"PUB|sighting|{}"], b"", None)) #P-07 FIX: tail joins the new bytes into one full line
+
     def test_oversize_closes(self):
         _, _, err = p.split_lines(b"", b"x" * (MAX_LINE_BYTES + 1))
         self.assertEqual((err.code, err.close, err.reason), (ErrorCode.CONTENT_TOO_LARGE, True, "line_too_long"))
@@ -43,30 +49,35 @@ class TestRoundTrip(unittest.TestCase):
         self.assertEqual(r, p.Ok("SUB", {"topic": "sighting", "sub_id": "responseteam"}))
 
     def test_sub_ack(self):
-        self.assertEqual(p.parse_sub_ack(p.format_sub_ack("alert")).fields["topic"], "alert")
+        r = p.parse_sub_ack(p.format_sub_ack("alert")) 
+        self.assertEqual(r, p.Ok("SUB_ACK", {"topic": "alert"})) #P-01 FIX: was only fields["topic"]; now checks command name + all fields
 
     def test_pub_ack(self):
-        self.assertEqual(p.parse_pub_ack(p.format_pub_ack("e-8")).fields["event_id"], "e-8")
+        r = p.parse_pub_ack(p.format_pub_ack("e-8"))
+        self.assertEqual(r, p.Ok("PUB_ACK", {"event_id": "e-8"})) #P-01 FIX: was only fields["event_id"]; now also checks the command name
 
     def test_get_stats(self):
-        self.assertEqual(p.parse_get_stats(p.format_get_stats("alert")).cmd, "GET_STATS")
-
+        r = p.parse_get_stats(p.format_get_stats("alert"))
+        self.assertEqual(r, p.Ok("GET_STATS", {"topic": "alert"})) #P-01 FIX: was only .cmd; now also checks the topic
     def test_pub_pipe_in_payload(self):
         payload = {"note": "a|b", "sev": 5}
-        r=p.parse_pub(p.format_pub("sighting", payload))
-        self.assertEqual(r.fields["payload"], payload)
+        r = p.parse_pub(p.format_pub("sighting", payload))
+        self.assertEqual(r, p.Ok("PUB", {"topic": "sighting", "payload": payload})) #P-01 FIX: was only payload; now also command + topic
 
     def test_event(self):
-        ev= {"event_id": "x", "topic": "alert", "payload": {}, "created_at": 1.0}
-        self.assertEqual(p.parse_event(p.format_event(ev)).fields["event"], ev)
+        ev = {"event_id": "x", "topic": "alert", "payload": {}, "created_at": 1.0}
+        r = p.parse_event(p.format_event(ev))
+        self.assertEqual(r, p.Ok("EVENT", {"event": ev})) #P-01 FIX: was only fields["event"]; now also the command name
 
     def test_ack(self):
         r = p.parse_ack(p.format_ack("sighting", "responseteam", "e-8"))
-        self.assertEqual(r.fields["event_id"], "e-8")
+        self.assertEqual(
+            r, p.Ok("ACK", {"topic": "sighting", "sub_id": "responseteam", "event_id": "e-8"}) #P-01 FIX: was only event_id; now command, topic, sub_id and event_id
+        )
 
     def test_err(self):
         r = p.parse_err(p.format_err(ErrorCode.BAD_REQUEST, "empty_topic"))
-        self.assertEqual((r.fields["code"], r.fields["message"]), (ErrorCode.BAD_REQUEST, "empty_topic"))
+        self.assertEqual(r, p.Ok("ERR", {"code": ErrorCode.BAD_REQUEST.value, "message": "empty_topic"})) #P-01 FIX: was only code + message; now also the command name
 
     def test_dispatcher_matches_direct_parser(self):
         line = p.format_sub("sighting", "team")
@@ -105,14 +116,14 @@ class TestRejects(unittest.TestCase):
         for line, reason in cases:
             with self.subTest(line=line):
                 self.assertEqual(self.reason(line), reason)
-    
+
     def test_ack_rejects(self):
         r=p.parse_ack("ACK|a|b|")
         self.assertEqual(r.reason, "empty_event_id")
 
     def test_pub_ack_rejects(self):
-        self.assertEqual(p.parse_pub_ack("PUB_ACK|").reason, "empty_event_id")      
-    
+        self.assertEqual(p.parse_pub_ack("PUB_ACK|").reason, "empty_event_id")
+
     def test_event_rejects(self):
         self.assertEqual(self.reason("EVENT|{}"), "missing_event_id")
 
@@ -124,6 +135,37 @@ class TestRejects(unittest.TestCase):
         for line in ["ERR|abc|x", "ERR|²|x"]:
             with self.subTest(line=line):
                 self.assertEqual(p.parse_err(line).reason, "bad_code")
+
+    def test_missing_and_extra_fields(self):           #P-02 NEW test: every command rejects too few AND too many fields
+        cases = [
+            "SUB", "SUB|a", "SUB|a|b|c",               #P-02 FIX: SUB needs exactly 3 fields (missing + extra)
+            "SUB_ACK", "SUB_ACK|a|b",                  #P-02 FIX: SUB_ACK needs exactly 2 fields
+            "PUB_ACK", "PUB_ACK|a|b",                  #P-02 FIX: PUB_ACK needs exactly 2 fields
+            "GET_STATS", "GET_STATS|a|b",              #P-02 FIX: GET_STATS needs exactly 2 fields
+            "ACK", "ACK|a", "ACK|a|b", "ACK|a|b|c|d",  #P-02 FIX: ACK needs exactly 4 fields
+            "PUB",                                     #P-02 FIX: PUB with no topic and no payload
+            "EVENT",                                   #P-02 FIX: EVENT with no payload
+            "ERR", "ERR|400",                          #P-02 FIX: ERR needs a code and a message
+        ]
+        for line in cases:
+            with self.subTest(line=line):
+                self.assertEqual(self.reason(line), "bad_field_count") #P-02 FIX: rejected, never repaired
+
+    def test_extra_pipe_in_pub_and_event_is_payload(self):             #P-02 NEW test: PUB/EVENT allow '|' in the last field
+        self.assertEqual(self.reason("PUB|sighting|{}|x"), "bad_json") #P-02 FIX: extra '|' becomes part of the JSON, so bad_json not bad_field_count
+        self.assertEqual(self.reason("EVENT|{}|x"), "bad_json")        #P-02 FIX: same rule for EVENT
+
+    def test_empty_and_whitespace_topic(self): #P-03 NEW test: empty or blank topic gives empty_topic
+        cases = [
+            "SUB||team", "SUB|   |team", "SUB|\t|team",    #P-03 FIX: SUB with empty, spaces-only and tab-only topic
+            "SUB_ACK|", "SUB_ACK|   ", "SUB_ACK|\t",       #P-03 FIX: SUB_ACK
+            "PUB||{}", "PUB|   |{}", "PUB|\t|{}",          #P-03 FIX: PUB
+            "ACK||s|e", "ACK|   |s|e", "ACK|\t|s|e",       #P-03 FIX: ACK
+            "GET_STATS|", "GET_STATS|   ", "GET_STATS|\t", #P-03 FIX: GET_STATS
+        ]
+        for line in cases:
+            with self.subTest(line=line):
+                self.assertEqual(self.reason(line), "empty_topic") #P-03 FIX: named empty_topic, not a generic error
 
 if __name__ == "__main__":
     unittest.main()
