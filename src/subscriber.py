@@ -162,3 +162,115 @@ def show_event(event):
     # print
     print(line, flush=True)
     return True
+
+
+def subscribe(link, sub_id, topics):
+    """send one SUB per topic and wait until every topic has been SUB_ACKed"""
+    # one SUB per topic, the broker keeps a separate offset per (topic, sub_id).
+    # fire off all SUB reqs up front
+    for topic in topics:
+        link.send(format_sub(topic, sub_id))
+    # track which topics still haven't received their SUB_ACK receipt
+    pending = set(topics)
+    while pending:
+        try:
+            # wait for next line from the broker
+            message = link.read_message()
+        except ReadTimeout:
+            # timeout on handshake, raise LinkError and list which topics hung
+            raise LinkError(f"no_sub_ack_within_timeout: {sorted(pending)}") from None
+        if isinstance(message, Err):
+            # a malformed line, warn and keep waiting, the timeout catches a
+            # broker that never answers properly
+            warn("sub", "bad_line_from_broker", message.reason)
+        elif message.cmd == "SUB_ACK":
+            # broker confirmed one topic, cross it off the pending list
+            topic = message.fields["topic"]
+            if topic in pending:
+                pending.remove(topic)
+            else:
+                # warn if broker ACKed a topic we didn't ask for
+                warn("sub", "unexpected_sub_ack", topic)
+        elif message.cmd == "EVENT":
+            # the broker sends a topic's replay right after its SUB_ACK but
+            # before it reads our next SUB, so events can arrive while we are
+            # still waiting for the other topics' SUB_ACKs, show them now
+            show_event(message.fields["event"])
+        elif message.cmd == "ERR":
+            # the broker refused our SUB, so a SUB_ACK will never come
+            raise LinkError(f"subscribe_rejected: {message.fields['code']} "
+                            f"{message.fields['message']}")
+        else:
+            warn("sub", "unexpected_reply", message.cmd)
+
+
+def listen(link):
+    """live loop: print every event until the connection ends (raises LinkError)"""
+    # while live, silence is normal (nothing published)
+    link.set_timeout(LIVE_POLL_S)
+    while True:
+        try:
+            message = link.read_message()
+        except ReadTimeout:
+            continue # nothing arrived; wait again
+        if isinstance(message, Err):
+            # broker sent garbled text that failed protocol parsing
+            # log a warning and stay connected
+            warn("sub", "bad_line_from_broker", message.reason)
+        elif message.cmd == "EVENT":
+            # real event arrived, validate, format, color, and print it
+            show_event(message.fields["event"])
+        elif message.cmd == "ERR":
+            # bad ACK, The connection is fine
+            warn("sub", "broker_error",
+                 f"{message.fields['code']} {message.fields['message']}")
+        else:
+            # else other non-event reply gets logged without killing the loop
+            warn("sub", "unexpected_message", message.cmd)
+
+
+def parse_args(argv=None):
+    """read --as and --host from the command line"""
+    parser = argparse.ArgumentParser(description="Paranormal Office subscriber")
+    parser.add_argument("--as", dest="role", required=True, choices=sorted(SUBSCRIBERS))
+    parser.add_argument("--host", default=HOST, help=f"broker address (default {HOST})")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    """connect, subscribe, listen. return an exit code"""
+    args = parse_args(argv)
+    # normalise_id gives the same identity the broker computes ("ResponseTeam"
+    # -> "responseteam"), so our offsets belong to us across restarts
+    sub_id = normalise_id(args.role)
+    # look up which tuple of topics the role should subscribe to
+    topics = SUBSCRIBERS[args.role]
+    try:
+        # dial broker with startup timeout for the handshake
+        link = connect(args.host, PORT, SUB_ACK_TIMEOUT_S)
+    except OSError as exc:
+        # broker isn't running or network is unreachable, warn and fail cleanly
+        warn("sub", "cannot_connect", f"{args.host}:{PORT} {exc}")
+        return 1
+    info("sub", f"{sub_id} connected to {args.host}:{PORT}")
+    try:
+        # send SUB commands and wait for all SUB_ACKs (plus replay)
+        subscribe(link, sub_id, topics)
+        info("sub", f"subscribed to {', '.join(topics)}")
+        # stream live events until disconnected or Ctrl + C
+        listen(link)
+    except LinkError as exc:
+        # reconnect loop ----
+        warn("sub", "link_failed", str(exc))
+        return 1
+    except KeyboardInterrupt:
+        # print newline so returning shell isn't stuck after "^C"
+        print()
+    finally:
+        # close tcp socket
+        link.close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
