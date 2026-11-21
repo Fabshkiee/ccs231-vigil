@@ -5,7 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from common.protocol import Err, Ok
 from subscriber import (
     LIVE_POLL_S, RED, SUBSCRIBERS, YELLOW, BrokerLink, LinkError, ReadTimeout,
-    describe, format_event_line, event_problem, severity_of,
+    describe, format_event_line, event_problem, severity_of, color_for, listen,
+    parse_args,  subscribe
 )
 
 LONG_ID = "a" * 32
@@ -91,6 +92,43 @@ class FormattingTests(unittest.TestCase):
         for bad in ({}, {"sev": "5"}, {"sev": True}, {"sev": 2.5}):
             with self.subTest(payload=bad):
                 self.assertIsNone(severity_of(bad))
+
+class FakeLink:
+    """stands in for BrokerLink: records sends, replays a script of replies
+    a script item that is an exception is raised instead of returned"""
+
+    def __init__(self, script=()):
+        self.sent = []
+        self.timeout = None
+        self._script = list(script)
+
+    def send(self, line):
+        self.sent.append(line)
+
+    def set_timeout(self, seconds):
+        self.timeout = seconds
+
+    def read_message(self):
+        item = self._script.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+class ParseArgsTests(unittest.TestCase):
+    def test_valid_role_and_default_host(self):
+        args = parse_args(["--as", "ResponseTeam"])
+        self.assertEqual((args.role, args.host), ("ResponseTeam", "127.0.0.1"))
+
+    def test_unknown_role_exits(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                parse_args(["--as", "Nobody"])
+
+    def test_topic_table_matches_the_matrix(self):
+        self.assertEqual(SUBSCRIBERS["ResponseTeam"], ("sighting", "poltergeist"))
+        self.assertEqual(SUBSCRIBERS["PublicShield"], ("alert",))
+        self.assertIn("readings", SUBSCRIBERS["ResearchArchive"])
+        self.assertNotIn("readings", SUBSCRIBERS["ResponseTeam"]) # ignores ambient
 
 
 if __name__ == "__main__":
