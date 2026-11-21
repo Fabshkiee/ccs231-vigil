@@ -77,6 +77,10 @@ class BrokerLink:
         """change ReadTimeout: long wait on initial connection(hist replay), 1s on live"""
         self.sock.settimeout(seconds)
 
+    def close(self):
+        """Close the socket."""
+        self.sock.close()
+
 def connect(host, port, timeout):
     """open tcp connection, perform 3-way tcp handshake, handover brokerlink"""
     return BrokerLink(socket.create_connection((host, port), timeout=timeout))
