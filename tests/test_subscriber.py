@@ -43,6 +43,10 @@ class BrokerLinkTests(unittest.TestCase):
         self.link.send("SUB|sighting|responseteam")
         self.assertEqual(self.broker_side.recv(100), b"SUB|sighting|responseteam\n")
 
+    def test_set_timeout_changes_the_socket_timeout(self):
+        self.link.set_timeout(0.5)
+        self.assertEqual(self.mine.gettimeout(), 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()
