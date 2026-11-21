@@ -29,6 +29,17 @@ class BrokerLinkTests(unittest.TestCase):
         self.assertEqual(self.link.read_message().fields["topic"], "one")
         self.assertEqual(self.link.read_message().fields["topic"], "two")
 
+    def test_timeout_is_read_timeout_not_link_error(self):
+        self.mine.settimeout(0.2)
+        with self.assertRaises(ReadTimeout):
+            self.link.read_message()
+
+    def test_closed_connection_raises_link_error(self):
+        self.broker_side.close()
+        with self.assertRaises(LinkError):
+            self.link.read_message()
+
+
 
 if __name__ == "__main__":
     unittest.main()
