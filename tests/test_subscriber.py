@@ -24,6 +24,11 @@ class BrokerLinkTests(unittest.TestCase):
             b'EVENT|{"event_id":"a","topic":"t","payload":{},"created_at":1}\n')
         self.assertEqual(self.link.read_message().cmd, "EVENT")
 
+    def test_two_lines_in_one_chunk_come_out_one_at_a_time(self):
+        self.broker_side.sendall(b"SUB_ACK|one\nSUB_ACK|two\n")
+        self.assertEqual(self.link.read_message().fields["topic"], "one")
+        self.assertEqual(self.link.read_message().fields["topic"], "two")
+
 
 if __name__ == "__main__":
     unittest.main()
