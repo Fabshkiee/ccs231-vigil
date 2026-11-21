@@ -52,7 +52,7 @@ class BrokerLink:
 
     def read_message(self):
         """block until one full line arrives; return Ok/Err result"""
-        while not self.lines:
+        while not self._lines:
             try:
                 data = self.sock.recv(RECV_BYTES)
             except TimeoutError:
