@@ -11,6 +11,7 @@ import common.constants as consts
 import common.ids as ids
 import common.log as logger
 import common.protocol as prot
+from common.protocol import ErrorCode
 import common.storage as storage
 
 
@@ -51,7 +52,7 @@ def _send_line(client: sck.socket, wire_msg: str) -> None:
 	with _get_send_lock(client):
 		client.sendall(data)
 
-def _send_err(client: sck.socket, err_code: int, reason: str) -> None:
+def _send_err(client: sck.socket, err_code: prot.ErrorCode, reason: str) -> None:
 	"""Helper function that encodes and sends error message to client"""
 	clean_reason = reason.replace("|", "/").replace("\n", " ").replace("\r", "")
 	try:
@@ -101,7 +102,7 @@ def _handle_pub(client: sck.socket, topic: str, payload: dict) -> None:
 			storage.append_event(event)
 		except (storage.StoreError, OSError) as e:
 			logger.warn("broker", str(e))
-			_send_err(client, 503, "store failure")
+			_send_err(client, ErrorCode.SERVICE_UNAVAILABLE, "store failure")
 			return
 
 		# save successful: copy current subscription list before operation
@@ -132,7 +133,7 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 		topic_events = storage.load_events().get(topic, [])
 	except (storage.StoreError, OSError) as e:
 		logger.warn("broker", str(e))
-		_send_err(client, 503, "store failure")
+		_send_err(client, ErrorCode.SERVICE_UNAVAILABLE, "store failure")
 		return
 
 	# proceed if offsets loaded
@@ -157,7 +158,7 @@ def _handle_sub(client: sck.socket, topic: str, sub_id: str) -> None:
 				topic_events = storage.load_events().get(topic, [])
 			except (storage.StoreError, OSError) as e:
 				logger.warn("broker", str(e))
-				_send_err(client, 503, "store failure")
+				_send_err(client, ErrorCode.SERVICE_UNAVAILABLE, "store failure")
 				return
 				
 			# get the latest total count of events[topic] 
@@ -190,7 +191,7 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 		events = storage.load_events()
 	except (storage.StoreError, OSError) as e:
 		logger.warn("broker", str(e))
-		_send_err(client, 503, "store failure")
+		_send_err(client, ErrorCode.SERVICE_UNAVAILABLE, "store failure")
 		return
 
 	topic_events = events.get(topic, [])
@@ -204,7 +205,7 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 	if matched_idx is None:
 		err_msg = "unknown event"
 		logger.warn("broker", err_msg)
-		_send_err(client, 422, err_msg)
+		_send_err(client, ErrorCode.UNPROCESSABLE_CONTENT, err_msg)
 		return
 
 	client_curr_offset = offsets.get(sub_id, {}).get(topic, -1)
@@ -216,7 +217,7 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 			logger.info("broker", f"ack {sub_id} on {topic} -> offset {matched_idx}")
 	except (storage.StoreError, OSError) as e:
 		logger.warn("broker", str(e))
-		_send_err(client, 503, "store failure")
+		_send_err(client, ErrorCode.SERVICE_UNAVAILABLE, "store failure")
 		return	
 
 # def _handle_get_stats(client: sck.socket, topic: str) -> None:
@@ -224,7 +225,7 @@ def _handle_ack(client: sck.socket, topic: str, sub_id: str, event_id: str) -> N
 
 def _handle_no_command(client: sck.socket, cmd: str) -> None:
 	logger.info("broker", f"ignored unknown command from {client.getpeername()}: {cmd}")
-	_send_err(client, 400, "unsupported_command")
+	_send_err(client, ErrorCode.BAD_REQUEST, "unsupported_command")
 
 def handle_client(client: sck.socket, addr):
 	logger.info("broker", f"new connection from {addr}")
@@ -237,7 +238,7 @@ def handle_client(client: sck.socket, addr):
 					logger.info("broker", f"connection closed by {addr}")
 					break
 				if len(raw_line) > consts.MAX_LINE_BYTES:
-					_send_err(client, 413, "line too long")
+					_send_err(client, ErrorCode.CONTENT_TOO_LARGE, "line too long")
 					break
 				
 				result: prot.Err | prot.Ok = prot.parse_line(raw_line.rstrip(b"\n"))
