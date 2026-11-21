@@ -146,5 +146,26 @@ class SubscribeTests(unittest.TestCase):
             subscribe(link, "responseteam", ("sighting",))
         self.assertIn("unexpected_sub_ack", out.getvalue())
 
+class ListenTests(unittest.TestCase):
+    def run_listen(self, script):
+        """Run listen() until the script ends in a LinkError; return the output."""
+        link = FakeLink(script + [LinkError("connection_closed")])
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            with self.assertRaises(LinkError):
+                listen(link)
+        self.assertEqual(link.timeout, LIVE_POLL_S)
+        return out.getvalue()
+
+    def test_prints_events_and_skips_timeouts(self):
+        out = self.run_listen([ReadTimeout(), Ok("EVENT", {"event": make_event()}),
+                               ReadTimeout()])
+        self.assertIn("chanak sighting, severity 5", out)
+
+    def test_malformed_line_and_err_are_warnings(self):
+        out = self.run_listen([Err(400, "bad_json"),
+                               Ok("ERR", {"code": 422, "message": "unknown_event"})])
+        self.assertIn("bad_line_from_broker", out)
+        self.assertIn("broker_error", out)
+
 if __name__ == "__main__":
     unittest.main()
