@@ -4,7 +4,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from common.protocol import Err, Ok
 from subscriber import (
-    LIVE_POLL_S, RED, SUBSCRIBERS, YELLOW, BrokerLink, LinkError, ReadTimeout
+    LIVE_POLL_S, RED, SUBSCRIBERS, YELLOW, BrokerLink, LinkError, ReadTimeout,
+    describe
 )
 
 LONG_ID = "a" * 32
@@ -46,6 +47,25 @@ class BrokerLinkTests(unittest.TestCase):
     def test_set_timeout_changes_the_socket_timeout(self):
         self.link.set_timeout(0.5)
         self.assertEqual(self.mine.gettimeout(), 0.5)
+
+def make_event(event_id=LONG_ID, topic="sighting", payload=None):
+    """build an event dict like the ones the broker sends"""
+    if payload is None:
+        payload = {"kind": "chanak sighting", "sev": 5, "source": "SightingReports"}
+    return {"event_id": event_id, "topic": topic, "payload": payload, "created_at": 1.0}
+
+class FormattingTests(unittest.TestCase):
+    def test_describe(self): 
+        cases = [
+            ({"kind": "chanak sighting", "sev": 5}, "chanak sighting, severity 5"),
+            ({"kind": "ambient reading", "zone": "zone-b", "level": 42},
+             "ambient reading, zone-b, level 42"),
+            ({}, "unknown") # empty payload fallback, not raise KeyError
+            ({"kind": "a\nb\tc"}, "a b c"),
+        ]
+        for payload, expected in cases:
+            with self.subTest(payload=payload):
+                self.assertEqual(describe(payload), expected)
 
 
 if __name__ == "__main__":
