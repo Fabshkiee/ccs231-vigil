@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from common.protocol import Err, Ok
 from subscriber import (
     LIVE_POLL_S, RED, SUBSCRIBERS, YELLOW, BrokerLink, LinkError, ReadTimeout,
-    describe, format_event_line, event_problem
+    describe, format_event_line, event_problem, severity_of,
 )
 
 LONG_ID = "a" * 32
@@ -72,7 +72,7 @@ class FormattingTests(unittest.TestCase):
                 format_event_line(make_event()),
                 "Event aaaaaaaa — sighting: chanak sighting, severity 5",
             )
-            
+
     def test_event_problem(self):
         self.assertIsNone(event_problem(make_event()))
         cases = {
@@ -85,6 +85,13 @@ class FormattingTests(unittest.TestCase):
             for event in events:
                 with self.subTest(reason=reason, event=event):
                     self.assertEqual(event_problem(event), reason)
+
+    def test_severity_of(self):
+        self.assertEqual(severity_of({"sev": 5}), 5)
+        for bad in ({}, {"sev": "5"}, {"sev": True}, {"sev": 2.5}):
+            with self.subTest(payload=bad):
+                self.assertIsNone(severity_of(bad))
+
 
 if __name__ == "__main__":
     unittest.main()
