@@ -39,6 +39,9 @@ class BrokerLinkTests(unittest.TestCase):
         with self.assertRaises(LinkError):
             self.link.read_message()
 
+    def test_send_appends_newline(self):
+        self.link.send("SUB|sighting|responseteam")
+        self.assertEqual(self.broker_side.recv(100), b"SUB|sighting|responseteam\n")
 
 
 if __name__ == "__main__":
