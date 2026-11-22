@@ -317,6 +317,16 @@ class RunForeverTests(unittest.TestCase):
             self.assertEqual(link.sent, ["SUB|sighting|responseteam"])
             self.assertTrue(link.closed)
 
+    def test_seen_set_survives_a_reconnect_so_replays_print_once(self):
+        event = Ok("EVENT", {"event": make_event()})
+        first = FakeLink([SUB_ACK, event, DROPPED])
+        # after reconnecting, the broker replays the same event (our ACK "was lost")
+        second = FakeLink([SUB_ACK, event, DROPPED])
+        _, _, out = self.run_loop([first, second, REFUSED], sleeps=3)
+        self.assertEqual(out.count("chanak sighting, severity 5"), 1)   # printed once
+        ack = f"ACK|sighting|responseteam|{LONG_ID}"
+        self.assertIn(ack, first.sent)
+        self.assertIn(ack, second.sent)  
 
 if __name__ == "__main__":
     unittest.main()
