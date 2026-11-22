@@ -206,5 +206,12 @@ class SeenIdsTests(unittest.TestCase):
         for event_id in "bcd":
             self.assertIn(event_id, seen)
 
+    def test_adding_a_known_id_does_not_use_up_space(self):
+        seen = SeenIds(limit=2)
+        seen.add("a")
+        seen.add("a")
+        seen.add("b")
+        self.assertIn("a", seen)
+
 if __name__ == "__main__":
     unittest.main()
