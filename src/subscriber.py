@@ -9,7 +9,7 @@ from common.constants import (
     )
 from common.ids import normalise_id
 from common.log import info, warn
-from common.protocol import Err, format_sub, parse_line, split_lines
+from common.protocol import Err, format_sub, parse_line, split_lines, format_ack
 
 # --- TEMPORARY constants -------------------------
 HOST = "127.0.0.1"
@@ -191,26 +191,45 @@ def color_enabled():
     """color only on a real terminal, and never when NO_COLOR is set"""
     return not os.environ.get("NO_COLOR") and sys.stdout.isatty()
 
-
-def show_event(event):
-    """print one event, returns true if shown"""
-    # validate field types
-    problem = event_problem(event)
-    if problem:
-        # never crash on a bad event, warn and carry on
-        warn("sub", problem, event)
-        return False
+def print_event(event):
+    """print one event. The caller has already checked it with event_problem()."""
     # build the plain-text summary line
     line = format_event_line(event)
     # look up sev color and apply if applicable
     color = color_for(severity_of(event["payload"]))
     if color and color_enabled():
         line = f"{color}{line}{RESET}"
-    # flush=True: when output is piped (tail -f during the demo), Python would
-    # otherwise hold lines in a buffer and the audience would see nothing.
-    # print
+    # flush=True: the line must really be out before we send the ACK, and when
+    # output is piped (tail -f during the demo) Python would otherwise buffer it
     print(line, flush=True)
-    return True
+
+def handle_event(link, sub_id, seen, event):
+    """check, dedupe, print, then ACK one event. the heart of at-least-once"""
+    # validate field types first
+    problem = event_problem(event)
+    if problem:
+        # never crash on a bad event. do not ACK it, we never showed it
+        warn("sub", problem, event)
+        return
+    # check if event_id is alreay in our SeenIds memory
+    event_id = event["event_id"]
+    if event_id not in seen:
+        # new event, show to user right now
+        print_event(event)
+        # remember it before the ACK is sent. if the send fails, a replay of
+        # this event is then recognised as a duplicate and not printed twice
+        seen.add(event_id)
+    # duplicates skip the print but not the ACK. If earlier ACK was lost,
+    # the broker's offset is stuck behind this event, re-ACKing moves it on
+    try:
+        # build protocol ACK string
+        ack_line = format_ack(event["topic"], sub_id, event_id)
+    except ValueError:
+        # warn and skip sending if a broken field would corrupt the protocol line
+        warn("sub", "unackable_event", event_id)
+        return
+    # send ACK receipt (after print and before next read)
+    link.send(ack_line)
 
 
 def subscribe(link, sub_id, topics):
