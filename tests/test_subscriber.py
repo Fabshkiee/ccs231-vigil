@@ -232,5 +232,13 @@ class HandleEventTests(unittest.TestCase):
         self.assertIn("chanak sighting, severity 5", out)
         self.assertEqual(link.sent, [self.ACK_LINE])
 
+    def test_ack_is_sent_only_after_the_print(self):
+        out = io.StringIO()
+        link = OrderLink(out)
+        with contextlib.redirect_stdout(out):
+            handle_event(link, "responseteam", SeenIds(), make_event())
+        # at the moment the ACK went out, the event text was already printed
+        self.assertIn("chanak sighting", link.printed_at_send[0])
+
 if __name__ == "__main__":
     unittest.main()
