@@ -5,6 +5,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from common import protocol as p
+from common.protocol import ErrorCode
 from common.constants import MAX_LINE_BYTES
 from common.ids import new_event_id, normalise_id
 
@@ -40,7 +41,7 @@ class TestBuffering(unittest.TestCase):
 
     def test_oversize_closes(self):
         _, _, err = p.split_lines(b"", b"x" * (MAX_LINE_BYTES + 1))
-        self.assertEqual((err.code, err.close, err.reason), (413, True, "line_too_long"))
+        self.assertEqual((err.code, err.close, err.reason), (ErrorCode.CONTENT_TOO_LARGE, True, "line_too_long"))
 
 class TestRoundTrip(unittest.TestCase):
     def test_sub(self):
@@ -75,8 +76,8 @@ class TestRoundTrip(unittest.TestCase):
         )
 
     def test_err(self):
-        r = p.parse_err(p.format_err(400, "empty_topic"))
-        self.assertEqual(r, p.Ok("ERR", {"code": 400, "message": "empty_topic"})) #P-01 FIX: was only code + message; now also the command name
+        r = p.parse_err(p.format_err(ErrorCode.BAD_REQUEST, "empty_topic"))
+        self.assertEqual(r, p.Ok("ERR", {"code": ErrorCode.BAD_REQUEST.value, "message": "empty_topic"})) #P-01 FIX: was only code + message; now also the command name
 
     def test_dispatcher_matches_direct_parser(self):
         line = p.format_sub("sighting", "team")
@@ -128,7 +129,7 @@ class TestRejects(unittest.TestCase):
 
     def test_err_rejects_newline(self):
         with self.assertRaises(ValueError):
-            p.format_err(400, "a\nb")
+            p.format_err(ErrorCode.BAD_REQUEST, "a\nb")
 
     def test_err_bad_code(self):
         for line in ["ERR|abc|x", "ERR|²|x"]:

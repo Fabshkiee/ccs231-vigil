@@ -7,6 +7,14 @@ import json
 from dataclasses import dataclass
 from common.constants import MAX_LINE_BYTES
 from common.ids import normalise_id
+from enum import Enum
+
+class ErrorCode(Enum):
+    # To get the literal value (e.g, 400), call the value method (ex: ErrorCode.BAD_REQUEST.value)
+    BAD_REQUEST = 400
+    CONTENT_TOO_LARGE = 413
+    UNPROCESSABLE_CONTENT = 422
+    SERVICE_UNAVAILABLE = 503
 
 @dataclass(frozen=True)
 class Ok:
@@ -15,7 +23,7 @@ class Ok:
 
 @dataclass(frozen=True)
 class Err:
-    code: int
+    code: ErrorCode
     reason: str
     close: bool = False
 
@@ -23,12 +31,12 @@ def split_lines(buffer, data):
     buf = buffer + data
     *complete, rest = buf.split(b"\n")
     if any(len(line) > MAX_LINE_BYTES for line in complete) or len(rest) > MAX_LINE_BYTES:
-        return [], b"", Err(413, "line_too_long", close=True)
+        return [], b"", Err(ErrorCode.CONTENT_TOO_LARGE, "line_too_long", close=True)
     return complete, rest, None
 
 #_helpers
 def _bad(reason):
-    return Err(400, reason)
+    return Err(ErrorCode.BAD_REQUEST, reason)
 
 def _field(value):
     if "|" in value or "\n" in value:
@@ -132,7 +140,14 @@ def parse_err(line):
         return _bad("bad_field_count")
     if not (parts[1].isascii() and parts[1].isdigit()):
         return _bad("bad_code")
-    return Ok("ERR", {"code": int(parts[1]), "message": parts[2]})
+
+    # If error code does not exist in ErrorCode
+    try:
+        code = ErrorCode(int(parts[1]))
+    except ValueError:
+        return _bad("bad_code")
+    
+    return Ok("ERR", {"code": code, "message": parts[2]})
 
 
 #format
@@ -148,8 +163,8 @@ def format_pub(topic, payload):
 def format_event(event):
     return f"EVENT|{json.dumps(event, separators=(',', ':'))}"
 
-def format_err(code, message):
-    return f"ERR|{code}|{_field(message)}"
+def format_err(code: ErrorCode, message):
+    return f"ERR|{code.value}|{_field(message)}"
 
 
 
