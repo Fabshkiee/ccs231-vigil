@@ -7,6 +7,7 @@ from subscriber import (
     LIVE_POLL_S, RED, SUBSCRIBERS, YELLOW, BrokerLink, LinkError, ReadTimeout,
     describe, format_event_line, event_problem, severity_of, color_for, listen,
     parse_args,  subscribe, SeenIds, SubscribeRejected, backoff_delay, handle_event,
+    run_forever
 )
 
 LONG_ID = "a" * 32
@@ -254,6 +255,59 @@ class BackoffTests(unittest.TestCase):
 
     def test_negative_attempt_counts_as_the_first(self):
         self.assertEqual(backoff_delay(-3), 1)
+
+class Connector:
+    """a fake connect function: each call consumes the next scripted outcome.
+    An Exception is raised (a failed connect); anything else is returned"""
+
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls = 0
+
+    def __call__(self, host, port, timeout):
+        self.calls += 1
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class FakeSleep:
+    """records every delay instead of waiting; stops the loop after `limit`
+    sleeps by raising KeyboardInterrupt, exactly like a Ctrl+C would"""
+
+    def __init__(self, limit):
+        self.limit = limit
+        self.delays = []
+
+    def __call__(self, seconds):
+        self.delays.append(seconds)
+        if len(self.delays) >= self.limit:
+            raise KeyboardInterrupt
+
+
+REFUSED = ConnectionRefusedError("refused")
+TOPICS = ("sighting",)
+SUB_ACK = Ok("SUB_ACK", {"topic": "sighting"})
+DROPPED = LinkError("connection_closed")
+
+
+class RunForeverTests(unittest.TestCase):
+    def run_loop(self, outcomes, sleeps, seen=None):
+        """run the loop until FakeSleep stops it. Returns (connector, sleep, output)"""
+        connector = Connector(outcomes)
+        sleep = FakeSleep(sleeps)
+        seen = SeenIds() if seen is None else seen
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            with self.assertRaises(KeyboardInterrupt):
+                run_forever("127.0.0.1", "responseteam", TOPICS, seen,
+                            connect_fn=connector, sleep_fn=sleep)
+        return connector, sleep, out.getvalue()
+
+    def test_backoff_grows_while_the_broker_is_down(self):
+        _, sleep, out = self.run_loop([REFUSED] * 5, sleeps=5)
+        self.assertEqual(sleep.delays, [1, 2, 4, 5, 5])
+        self.assertIn("cannot_connect", out)
 
 
 if __name__ == "__main__":
