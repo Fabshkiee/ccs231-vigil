@@ -304,6 +304,55 @@ def listen(link, sub_id, seen):
             # else other non-event reply gets logged without killing the loop
             warn("sub", "unexpected_message", message.cmd)
 
+def backoff_delay(attempt):
+    """seconds to wait before retry number 'attempt' (0 = the first retry)"""
+    # 1s, 2s, 4s, then 5s forever (BACKOFF_STEPS_S). growing delays stop us
+    # hammering a broker that is restarting
+    steps = BACKOFF_STEPS_S
+    # clamp attempt to valid index range
+    return steps[min(max(attempt, 0), len(steps) - 1)]
+
+def run_forever(host, sub_id, topics, seen, connect_fn=connect, sleep_fn=time.sleep):
+    """connect -> subscribe -> listen, and start again whenever the link dies
+
+    returns 1 only if the broker rejects our SUB. Ctrl+C (KeyboardInterrupt)
+    is not caught here, it passes up to main(). connect_fn and sleep_fn are
+    parameters so the tests can run this loop without a network or real waiting
+    """
+    attempt = 0 # how many retries in a row have failed so far
+    was_live = False
+    while True:
+        link = None
+        try:
+            link = connect_fn(host, PORT, SUB_ACK_TIMEOUT_S) # connecting
+            info("sub", f"{sub_id} connected to {host}:{PORT}")
+            # re-SUB for every topic on every connection
+            subscribe(link, sub_id, topics, seen) # subscribing
+            # handshake success, clear failure counts
+            # log if it was the first connection or a recovery
+            attempt = 0
+            prefix = "reconnected, " if was_live else ""
+            info("sub", f"{prefix}subscribed to {', '.join(topics)}")
+            was_live = True
+            # enter the blocking live event stream until link breaks
+            listen(link, sub_id, seen) # live
+        except SubscribeRejected as exc:
+            # must come before the general handler below. Retrying can't help
+            warn("sub", "subscribe_rejected", str(exc))
+            return 1
+        except (OSError, LinkError) as exc:
+            # link is still none only if connect_fn itself failed
+            reason = "cannot_connect" if link is None else "connection_lost"
+            warn("sub", reason, str(exc))
+        finally:
+            if link is not None:
+                link.close()     # close socket
+        # wait before attempting to reconnect, increment counter, log wait, sleep
+        delay = backoff_delay(attempt) # waiting
+        attempt += 1
+        info("sub", f"retrying in {delay}s")
+        sleep_fn(delay)
+
 
 def parse_args(argv=None):
     """read --as and --host from the command line"""
