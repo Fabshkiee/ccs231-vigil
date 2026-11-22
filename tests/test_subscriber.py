@@ -159,7 +159,7 @@ class SubscribeTests(unittest.TestCase):
         link = FakeLink([Ok("SUB_ACK", {"topic": "sighting"}),
                          Ok("SUB_ACK", {"topic": "poltergeist"})])
         with contextlib.redirect_stdout(io.StringIO()):
-            subscribe(link, "responseteam", ("sighting", "poltergeist"))
+            subscribe(link, "responseteam", ("sighting", "poltergeist"), SeenIds)
         self.assertEqual(link.sent, ["SUB|sighting|responseteam",
                                      "SUB|poltergeist|responseteam"])
 
@@ -167,7 +167,7 @@ class SubscribeTests(unittest.TestCase):
         link = FakeLink([Ok("SUB_ACK", {"topic": "other"}),
                          Ok("SUB_ACK", {"topic": "sighting"})])
         with contextlib.redirect_stdout(io.StringIO()) as out:
-            subscribe(link, "responseteam", ("sighting",))
+            subscribe(link, "responseteam", ("sighting",), SeenIds)
         self.assertIn("unexpected_sub_ack", out.getvalue())
 
 class ListenTests(unittest.TestCase):
@@ -176,7 +176,7 @@ class ListenTests(unittest.TestCase):
         link = FakeLink(script + [LinkError("connection_closed")])
         with contextlib.redirect_stdout(io.StringIO()) as out:
             with self.assertRaises(LinkError):
-                listen(link)
+                listen(link, "responseteam", SeenIds())
         self.assertEqual(link.timeout, LIVE_POLL_S)
         return out.getvalue()
 
