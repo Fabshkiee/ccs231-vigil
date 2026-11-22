@@ -119,6 +119,25 @@ class FakeLink:
     def close(self):
         self.closed = True
 
+class OrderLink(FakeLink):
+    """records how much text had been printed at the moment each line is sent"""
+
+    def __init__(self, out):
+        super().__init__()
+        self.out = out
+        self.printed_at_send = []
+
+    def send(self, line):
+        self.printed_at_send.append(self.out.getvalue())
+        super().send(line)
+
+class FailingLink(FakeLink):
+    """a link whose sends always fail, like a connection that just died"""
+
+    def send(self, line):
+        raise LinkError("send_failed")
+    
+
 class ParseArgsTests(unittest.TestCase):
     def test_valid_role_and_default_host(self):
         args = parse_args(["--as", "ResponseTeam"])
