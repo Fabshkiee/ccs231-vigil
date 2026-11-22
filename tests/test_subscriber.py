@@ -226,6 +226,11 @@ class HandleEventTests(unittest.TestCase):
     def test_ack_line_matches_the_protocol_formatter(self):
         self.assertEqual(self.ACK_LINE, format_ack("sighting", "responseteam", LONG_ID))
 
+    def test_prints_and_then_acks(self):
+        link = FakeLink()
+        out = self.handle(link, make_event())
+        self.assertIn("chanak sighting, severity 5", out)
+        self.assertEqual(link.sent, [self.ACK_LINE])
 
 if __name__ == "__main__":
     unittest.main()
