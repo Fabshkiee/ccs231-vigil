@@ -363,38 +363,20 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
-    """connect, subscribe, listen. return an exit code"""
+    """run subscriber until Ctrl+C, return an exit code."""
     args = parse_args(argv)
     # normalise_id gives the same identity the broker computes ("ResponseTeam"
     # -> "responseteam"), so our offsets belong to us across restarts
     sub_id = normalise_id(args.role)
     # look up which tuple of topics the role should subscribe to
     topics = SUBSCRIBERS[args.role]
+    # process-wide SeenIds instance to keep remembered ids when socket reconnects
+    seen = SeenIds()
     try:
-        # dial broker with startup timeout for the handshake
-        link = connect(args.host, PORT, SUB_ACK_TIMEOUT_S)
-    except OSError as exc:
-        # broker isn't running or network is unreachable, warn and fail cleanly
-        warn("sub", "cannot_connect", f"{args.host}:{PORT} {exc}")
-        return 1
-    info("sub", f"{sub_id} connected to {args.host}:{PORT}")
-    try:
-        # send SUB commands and wait for all SUB_ACKs (plus replay)
-        subscribe(link, sub_id, topics)
-        info("sub", f"subscribed to {', '.join(topics)}")
-        # stream live events until disconnected or Ctrl + C
-        listen(link)
-    except LinkError as exc:
-        # reconnect loop ----
-        warn("sub", "link_failed", str(exc))
-        return 1
+        return run_forever(args.host, sub_id, topics, seen)
     except KeyboardInterrupt:
-        # print newline so returning shell isn't stuck after "^C"
         print()
-    finally:
-        # close tcp socket
-        link.close()
-    return 0
+        return 0
 
 
 if __name__ == "__main__":
