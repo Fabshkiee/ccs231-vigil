@@ -6,10 +6,11 @@ from common.protocol import Err, Ok
 from subscriber import (
     LIVE_POLL_S, RED, SUBSCRIBERS, YELLOW, BrokerLink, LinkError, ReadTimeout,
     describe, format_event_line, event_problem, severity_of, color_for, listen,
-    parse_args,  subscribe
+    parse_args,  subscribe, SeenIds, SubscribeRejected, backoff_delay, handle_event,
 )
 
 LONG_ID = "a" * 32
+OTHER_ID = "b" * 32
 
 class BrokerLinkTests(unittest.TestCase):
     def setUp(self):
@@ -101,6 +102,7 @@ class FakeLink:
         self.sent = []
         self.timeout = None
         self._script = list(script)
+        self.closed = False
 
     def send(self, line):
         self.sent.append(line)
@@ -113,6 +115,9 @@ class FakeLink:
         if isinstance(item, Exception):
             raise item
         return item
+
+    def close(self):
+        self.closed = True
 
 class ParseArgsTests(unittest.TestCase):
     def test_valid_role_and_default_host(self):
