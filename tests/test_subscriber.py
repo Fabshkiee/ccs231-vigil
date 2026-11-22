@@ -191,5 +191,13 @@ class ListenTests(unittest.TestCase):
         self.assertIn("bad_line_from_broker", out)
         self.assertIn("broker_error", out)
 
+class SeenIdsTests(unittest.TestCase):
+    def test_remembers_ids(self):
+        seen = SeenIds(limit=3)
+        self.assertNotIn("a", seen)
+        seen.add("a")
+        self.assertIn("a", seen)
+
+
 if __name__ == "__main__":
     unittest.main()
