@@ -2,8 +2,11 @@
 # If the broker dies it has to reconnect and subscribe again on its own
 
 import argparse, os, socket, sys
+from collections import deque
 
-from common.constants import ALERT_MIN_SEV, PORT, SUB_ACK_TIMEOUT_S
+from common.constants import (
+    ALERT_MIN_SEV, PORT, SUB_ACK_TIMEOUT_S, DEDUPE_WINDOW
+    )
 from common.ids import normalise_id
 from common.log import info, warn
 from common.protocol import Err, format_sub, parse_line, split_lines
@@ -28,11 +31,53 @@ RED, YELLOW, RESET = "\033[31m", "\033[33m", "\033[0m"
 
 
 class LinkError(Exception):
-    """the connection to the broker is unusable (closed, reset, no SUB_ACK)"""
+    """the connection to the broker is unusable (closed, reset, no SUB_ACK)
+    still worth retrying(new connection may work)"""
 
 class ReadTimeout(Exception):
     """no complete line arrived in time. not an error once we're live: a quiet
     broker just means nothing was published. kept separate from LinkError"""
+
+class SubscribeRejected(Exception):
+    """broker answered the SUB with an Err. not worth retrying
+    (req itself is invalid)"""
+
+class SeenIds:
+    """remembers the last 'limit' event ids so duplicates can be recognised
+
+    duplicates are expected with at-least-once delivery: if the ACK is lost,
+    the broker replays the event
+    """
+
+    def __init__(self, limit=DEDUPE_WINDOW):
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        self._limit = limit
+        # deque records the order ids arrived in so we can remove the oldest
+        # one from the front
+        self._order = deque()
+        # checks if id has already been seen, manage eviction manually to
+        # delete from both "_order" and "_ids" at the same time, otherwise
+        # "_ids" would grow forever and leak memory
+        self._ids = set()
+
+    def __contains__(self, event_id):
+        """lets us write 'event_id in seen'"""
+        return event_id in self._ids
+
+    def add(self, event_id):
+        """remember an id, forgetting the oldest one if the window is full"""
+        # if id is already remembered, do nothing and exit early
+        if event_id in self._ids:
+            return
+        # if memory window is full, pop oldest id and remove it from set also
+        if len(self._order) >= self._limit:
+            # forget the oldest id (leftmost in the deque) in both structures
+            self._ids.discard(self._order.popleft())
+        # place new id at the back and register it in the fast-lookup set
+        self._order.append(event_id)
+        self._ids.add(event_id)
+
 
 class BrokerLink:
     """one tcp connection to the broker, with line framing and error wrapping"""
