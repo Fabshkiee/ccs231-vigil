@@ -2,7 +2,7 @@ import contextlib, io, os, socket, sys, unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from common.protocol import Err, Ok
+from common.protocol import Err, Ok, format_ack
 from subscriber import (
     LIVE_POLL_S, RED, SUBSCRIBERS, YELLOW, BrokerLink, LinkError, ReadTimeout,
     describe, format_event_line, event_problem, severity_of, color_for, listen,
@@ -212,6 +212,20 @@ class SeenIdsTests(unittest.TestCase):
         seen.add("a")
         seen.add("b")
         self.assertIn("a", seen)
+
+class HandleEventTests(unittest.TestCase):
+    ACK_LINE = f"ACK|sighting|responseteam|{LONG_ID}"
+
+    def handle(self, link, event, seen=None):
+        """Run handle_event quietly and return what it printed."""
+        seen = SeenIds() if seen is None else seen
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            handle_event(link, "responseteam", seen, event)
+        return out.getvalue()
+
+    def test_ack_line_matches_the_protocol_formatter(self):
+        self.assertEqual(self.ACK_LINE, format_ack("sighting", "responseteam", LONG_ID))
+
 
 if __name__ == "__main__":
     unittest.main()
