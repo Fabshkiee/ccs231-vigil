@@ -1,11 +1,12 @@
 # The listener. Connects, subscribes, prints whatever arrives, ACKs (Acknowledge) it.
 # If the broker dies it has to reconnect and subscribe again on its own
 
-import argparse, os, socket, sys
+import argparse, os, socket, sys, time
 from collections import deque
 
 from common.constants import (
-    ALERT_MIN_SEV, PORT, SUB_ACK_TIMEOUT_S, DEDUPE_WINDOW
+    ALERT_MIN_SEV, PORT, SUB_ACK_TIMEOUT_S, DEDUPE_WINDOW,
+    BACKOFF_STEPS_S
     )
 from common.ids import normalise_id
 from common.log import info, warn
@@ -25,6 +26,10 @@ SUBSCRIBERS = {
 RECV_BYTES = 4096       
 SHORT_ID_LEN = 8
 WARN_MIN_SEV = 2 # severity scale: 1 faint, 2-3 yellow, 4-5 red
+
+# error code broker uses when an ACK names an event it doesn't know
+# answers an ACK not a SUB, must not abort subsrcibing
+ERR_UNKNOWN_EVENT = 422
 
 # ansi color codes
 RED, YELLOW, RESET = "\033[31m", "\033[33m", "\033[0m"
@@ -232,7 +237,7 @@ def handle_event(link, sub_id, seen, event):
     link.send(ack_line)
 
 
-def subscribe(link, sub_id, topics):
+def subscribe(link, sub_id, topics, seen):
     """send one SUB per topic and wait until every topic has been SUB_ACKed"""
     # one SUB per topic, the broker keeps a separate offset per (topic, sub_id).
     # fire off all SUB reqs up front
@@ -263,16 +268,19 @@ def subscribe(link, sub_id, topics):
             # the broker sends a topic's replay right after its SUB_ACK but
             # before it reads our next SUB, so events can arrive while we are
             # still waiting for the other topics' SUB_ACKs, show them now
-            show_event(message.fields["event"])
+            handle_event(link, sub_id, seen, message.fields["event"])
         elif message.cmd == "ERR":
+            if message.fields["code"] == ERR_UNKNOWN_EVENT:
+                warn("sub", "broker_error",
+                    f"{message.fields['code']} {message.fields['message']}")
+            else:
             # the broker refused our SUB, so a SUB_ACK will never come
-            raise LinkError(f"subscribe_rejected: {message.fields['code']} "
-                            f"{message.fields['message']}")
+                raise SubscribeRejected(f"{message.fields['code']} {message.fields['message']}")
         else:
             warn("sub", "unexpected_reply", message.cmd)
 
 
-def listen(link):
+def listen(link, sub_id, seen):
     """live loop: print every event until the connection ends (raises LinkError)"""
     # while live, silence is normal (nothing published)
     link.set_timeout(LIVE_POLL_S)
@@ -287,7 +295,7 @@ def listen(link):
             warn("sub", "bad_line_from_broker", message.reason)
         elif message.cmd == "EVENT":
             # real event arrived, validate, format, color, and print it
-            show_event(message.fields["event"])
+            handle_event(link, sub_id, seen, message.fields["event"])
         elif message.cmd == "ERR":
             # bad ACK, The connection is fine
             warn("sub", "broker_error",
