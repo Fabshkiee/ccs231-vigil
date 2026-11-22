@@ -198,6 +198,13 @@ class SeenIdsTests(unittest.TestCase):
         seen.add("a")
         self.assertIn("a", seen)
 
+    def test_oldest_id_is_forgotten_when_full(self):
+        seen = SeenIds(limit=3)
+        for event_id in "abcd":      # iterating a string gives "a","b","c","d"
+            seen.add(event_id)
+        self.assertNotIn("a", seen)  # pushed out by "d"
+        for event_id in "bcd":
+            self.assertIn(event_id, seen)
 
 if __name__ == "__main__":
     unittest.main()
