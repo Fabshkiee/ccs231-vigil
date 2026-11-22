@@ -248,5 +248,13 @@ class HandleEventTests(unittest.TestCase):
         self.assertEqual(out, "")
         self.assertEqual(link.sent, [self.ACK_LINE])
 
+class BackoffTests(unittest.TestCase):
+    def test_sequence_grows_then_stays_capped(self):
+        self.assertEqual([backoff_delay(n) for n in range(7)], [1, 2, 4, 5, 5, 5, 5])
+
+    def test_negative_attempt_counts_as_the_first(self):
+        self.assertEqual(backoff_delay(-3), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
