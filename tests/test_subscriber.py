@@ -309,6 +309,14 @@ class RunForeverTests(unittest.TestCase):
         self.assertEqual(sleep.delays, [1, 2, 4, 5, 5])
         self.assertIn("cannot_connect", out)
 
+    def test_every_reconnect_subscribes_again_and_closes_the_old_link(self):
+        first = FakeLink([SUB_ACK, DROPPED])
+        second = FakeLink([SUB_ACK, DROPPED])
+        self.run_loop([first, second, REFUSED], sleeps=3)
+        for link in (first, second):
+            self.assertEqual(link.sent, ["SUB|sighting|responseteam"])
+            self.assertTrue(link.closed)
+
 
 if __name__ == "__main__":
     unittest.main()
