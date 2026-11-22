@@ -240,5 +240,13 @@ class HandleEventTests(unittest.TestCase):
         # at the moment the ACK went out, the event text was already printed
         self.assertIn("chanak sighting", link.printed_at_send[0])
 
+    def test_duplicate_is_not_printed_but_is_acked_again(self):
+        seen = SeenIds()
+        self.handle(FakeLink(), make_event(), seen)
+        link = FakeLink()
+        out = self.handle(link, make_event(), seen)
+        self.assertEqual(out, "")
+        self.assertEqual(link.sent, [self.ACK_LINE])
+
 if __name__ == "__main__":
     unittest.main()
