@@ -481,7 +481,7 @@ def lines_for(state, child, now, width, height, role="broker"):
     if width < minimum or height < 10:
         return [
             "",
-            f"  VIGIL — {role} needs a wider window ({width}×{height})",
+            f"  VIGIL — {role} needs a bigger window ({width}×{height})",
             "  resize to at least 150×12; 231×13 is the target" if role == "broker"
             else f"  resize to at least {minimum}×12",
         ]
