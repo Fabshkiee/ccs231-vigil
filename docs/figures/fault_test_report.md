@@ -848,3 +848,123 @@ Publisher and subscriber terminal outputs, plus the matching event entry read fr
 Matching-subscriber delivery and persistence checks PASSED.
 
 Complete the non-matching-subscriber check by recording the actual observation duration. Persistence-before-delivery and topic-based subscriber selection are supported by review of the supplied broker code.
+
+
+## RECONNECT AND REPLAY TESTING (DEVELOPERS: JOHN MARK AND MJ)
+
+**Files that will be tested:** `src/broker.py`, `src/subscriber.py`, `src/publisher.py`, and `src/common/storage.py`
+
+### R-1 (RECONNECT TEST 1) Three Events Published While Subscriber Is Offline
+
+
+**Expected:**
+
+A subscriber reconnecting with the same ID receives its three missed events in log order. Its stored offset remains unchanged while offline and advances after it processes and acknowledges the replayed events.
+
+**Date and code version:**
+
+November 23, 2026 — commit `d666ef6`.
+
+**Input messages / values:**
+
+- Subscriber role: `ResponseTeam`.
+- Subscriber ID: `responseteam`.
+- Topic under test: `sighting`.
+- Starting acknowledged offset: `1`.
+
+Published while ResponseTeam was stopped:
+
+```text
+QA replay check 001, severity 2
+QA replay check 002, severity 2
+QA replay check 003, severity 2
+```
+
+**Command to test used:**
+
+Broker:
+
+```bash
+python3 src/broker.py
+```
+
+Subscriber, stopped with Control + C before publishing and restarted afterward:
+
+```bash
+python3 src/subscriber.py --as ResponseTeam
+```
+
+Publisher:
+
+```bash
+python3 src/publisher.py --as SightingReports
+```
+
+Offset checks before disconnecting, while offline after publishing, and after replay:
+
+```bash
+PYTHONPATH=src python3 -c 'import json; from common.storage import load_offsets; print(json.dumps(load_offsets().get("responseteam", {}), indent=2))'
+```
+
+Saved event and log-position check:
+
+```bash
+PYTHONPATH=src python3 -c 'import json; from common.storage import load_events; events = load_events().get("sighting", []); print(json.dumps([{"index": i, **e} for i, e in enumerate(events) if e.get("payload", {}).get("kind", "") in ("QA replay check 001", "QA replay check 002", "QA replay check 003")], indent=2))'
+```
+
+**Observed results:**
+
+The publisher confirmed all three events were saved while ResponseTeam was offline.
+
+ResponseTeam's `sighting` offset remained at `1` after publication.
+
+After restarting with the same subscriber ID, ResponseTeam printed all three missed events in the same order as the saved log:
+
+- Index `2`: `8760c92679fe4ccdbcb95d40d12dcaa0` — QA replay check 001.
+- Index `3`: `ca8646e9888141ffa387a982d0290ce1` — QA replay check 002.
+- Index `4`: `2881c21e9fc44bb680d2b8582c3b05d5` — QA replay check 003.
+
+Its stored `sighting` offset then advanced to `4`.
+
+No duplicate prints or previously acknowledged events appeared in the supplied replay output. Duplicate suppression was not exercised by this run because no duplicate delivery was observed.
+
+**Evidence / log reference:**
+
+Publisher output:
+
+```text
+Event 8760c926 saved (sighting)
+Event ca8646e9 saved (sighting)
+Event 2881c21e saved (sighting)
+```
+
+Offset before disconnecting and while offline after publication:
+
+```json
+{
+  "sighting": 1
+}
+```
+
+ResponseTeam replay output:
+
+```text
+Event 8760c926 — sighting: QA replay check 001, severity 2
+Event ca8646e9 — sighting: QA replay check 002, severity 2
+Event 2881c21e — sighting: QA replay check 003, severity 2
+[sub] subscribed to sighting, poltergeist
+```
+
+Offset after replay:
+
+```json
+{
+  "sighting": 4
+}
+```
+
+Saved events were verified through `load_events()`. Their full IDs and positions matched the replay order.
+
+**Verdict:**
+
+**PASS for the tested offline replay scenario.** All three missed events were recovered in log order, and the stored offset advanced from `1` to `4` after processing and acknowledgment.
