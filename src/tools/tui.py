@@ -457,6 +457,23 @@ def build_subscriber(role, state, now, width, big, status, received, queued):
     return rows
 
 
+def build_publisher(role, state, now, width, big, status, sent):
+    topic, typed = pub_model.ROLES[role]
+    rows = [[]] + title_block(role, width, big)
+    rows.append(split([IND, (BRASS + BOLD, f"{role} · publisher")], status, width))
+    rows.append([IND, (ASH, "publishes to "), (BONE, topic.upper())])
+    rows.append([IND, (ASH, "─" * (width - 3))])
+    if typed:
+        rows.append([IND, (BRASS, "● "), (BONE, "awaiting report")])
+    else:
+        count = sum(1 for ev in state.events if ev["payload"].get("source") == role)
+        rows.append([IND, (BRASS, "● "), (BONE, f"auto-emitting · sent {count}")])
+    rows.append([])
+    rows.append([IND, (STONE + BOLD, "LAST SENT")])
+    rows += sent
+    return rows
+
+
 def lines_for(state, child, now, width, height, role="broker"):
     minimum = 120 if role == "broker" else 70
     if width < minimum or height < 10:
@@ -468,16 +485,22 @@ def lines_for(state, child, now, width, height, role="broker"):
         ]
     err = ""
     up = None
+    sent = []
     if role == "broker":
         status, err = status_spans(child)
         if child is not None and child.spawn_time:
             up = (child.stopped_at or now) - child.spawn_time
+    elif role in pub_model.ROLES:
+        status = pub_status(child)
+        sent = publisher_sent(child, state)
     else:
         status = sub_status(child)
         received, queued = state.subscriber_counts(role)
     for big in (True, False):
         if role == "broker":
             rows = build_broker(state, now, width, big, status, err, up)
+        elif role in pub_model.ROLES:
+            rows = build_publisher(role, state, now, width, big, status, sent)
         else:
             rows = build_subscriber(role, state, now, width, big, status, received, queued)
         if len(rows) <= height - 1:
