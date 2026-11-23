@@ -303,3 +303,14 @@ class TestStorage(BaseStorageTest):
 		self.assertEqual(readings, new_events)
 		self.assertEqual(sighting, None)
 
+	def test_save_and_load_offsets(self):
+		new_offsets: dict = {
+			"responseteam": {"poltergeist": 3, "sighting": 5},
+			"researcharchive": {"readings": 64, "sighting": 5, "poltergeist": 3},
+		}
+
+		for sub_id, topics in new_offsets.items():
+			for topic, index in topics.items():
+				save_offset(sub_id, topic, index, self.file_path)
+
+		self.assertEqual(load_offsets(self.file_path), new_offsets)
