@@ -305,6 +305,23 @@ def status_spans(child):
     return [(BRASS, "● "), (BONE, "starting")], ""
 
 
+def sub_status(child):
+    if child is None:
+        return [(ASH, "○ preview")]
+    if not child.alive():
+        return [(BLOOD, "○ stopped"), (ASH, " · Enter restarts")]
+    line = ""
+    for text in reversed(list(child.lines)):
+        if text.strip() and ("[sub]" in text or "retrying in" in text):
+            line = text.strip()
+            break
+    if "warn: cannot_connect" in line or "warn: connection_lost" in line or "retrying in" in line:
+        return [(ASH, "◌ reconnecting")]
+    if "subscribed to" in line or "connected to" in line:
+        return [(MOSS, "● "), (BONE, "subscribed")]
+    return [(BRASS, "● "), (BONE, "starting")]
+
+
 def stats_rows(subs, up, events, alerts):
     # The broker logs no SUBSCRIBE, so a live count would need graded-code changes.
     # "acked" is a past-tense fact that survives a killed subscriber's pane.
