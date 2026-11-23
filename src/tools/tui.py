@@ -354,7 +354,9 @@ def route_rows():
     return rows
 
 
-def bus_feed_rows(events, now, limit):
+def bus_feed_rows(events, now, limit, topics=None):
+    if topics is not None:
+        events = [ev for ev in events if ev["topic"] in topics]
     if not events:
         return [[IND, (ASH, "○ waiting for events")]]
     rows = []
