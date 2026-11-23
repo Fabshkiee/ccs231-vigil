@@ -1092,26 +1092,11 @@ def main():
         "error": error,
     }
 
-    #aaaappends the result to the project's fault test report
-    report_path = (
-        Path(__file__).resolve().parents[2]
-        / "docs"
-        / "fault-test-report.md"
-    )
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with report_path.open("a", encoding="utf-8") as report:
-        report.write(f"\n### {args.case} Automated Run\n\n")
-        report.write(f"**Date:** {result['date']}\n\n")
-        report.write(f"**Verdict:** {verdict}\n\n")
-        report.write(f"**Expected:** {expected_results[args.case]}\n\n")
-        report.write("**Observed results and evidence:**\n\n")
-        report.write("```json\n")
-        report.write(json.dumps(result, indent=2))
-        report.write("\n```\n")
 
     print(args.case, "result:", verdict)
-    print("Report updated:", report_path)
+    print(json.dumps(result, indent=2))
+
+    
 
     return 0 if verdict == "PASS" else 1
 
