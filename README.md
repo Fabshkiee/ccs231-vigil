@@ -51,6 +51,29 @@ python3 src/publisher.py  --as SightingReports
 
 Subscribers select their topics by role with `--as <Role>`; there is no `--topics` flag. One process per terminal. The demo sequence and expected output are in the System Design Document.
 
+## Optional demo wall
+
+Post-M5 tooling — not part of grading, and never imported by graded code.
+
+Close any running demo windows first, then launch the seven panes:
+
+- **macOS:** `bash demos/mac-wall.command`
+- **Windows:** double-click `demos/windows-wall.bat` (or run `powershell -NoProfile -ExecutionPolicy Bypass -File demos/windows-wall.ps1`)
+
+Each pane owns its real child process. Ctrl+C stops only that role; Enter respawns it. Both launchers refuse to start if a broker is already running and back up `src/common/data` with a timestamp (`${TMPDIR}` on macOS, `%TEMP%` on Windows).
+
+The broker pane needs at least 120 columns (231×13 target); node panes are sized for 75×21. Column count depends on Terminal font size, so rehearse on the projector.
+
+A single pane can also be run on its own:
+
+```bash
+python3 src/tools/tui.py --role broker
+python3 src/tools/tui.py --role ResponseTeam
+python3 src/tools/tui.py --role SightingReports
+```
+
+Add `--once --plain --width N --height N` for a static frame with no child — handy for checking a window size. `demos/mac-demo.command`, `demos/windows-demo.bat` and `demos/windows-demo.ps1` remain the plain-CLI fallback.
+
 ## Repository layout
 
 ```text
