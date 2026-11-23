@@ -661,6 +661,9 @@ def main(argv=None):
                     state.refresh()
                     draw(state, child, args.role)
                     if args.role in pub_model.ROLES and pub_model.ROLES[args.role][1]:
+                        if not child.lines:
+                            time.sleep(0.2)
+                            continue
                         if not publisher_prompt(term, child, args.role):
                             child.stop()
                             break
