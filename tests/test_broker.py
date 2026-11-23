@@ -3,8 +3,10 @@ import socket as sck
 import threading as thr
 import time as t
 import unittest as ut
-from unittest.mock import MagicMock, patch
 import os, sys, io
+from unittest.mock import MagicMock, patch
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -359,6 +361,21 @@ class TestBrokerConnection(ut.TestCase):
 			publisher,
 			prot.format_err(prot.ErrorCode.SERVICE_UNAVAILABLE, "store failure"),
 		)
+
+	def test_corrupt_log_blocks_startup(self):
+		real_load_events = broker.storage.load_events
+
+		with TemporaryDirectory() as temp_dir:
+			event_log = Path(temp_dir) / "event_log.json"
+			event_log.write_text('{"sightings": [', encoding="utf-8") # Inject malformed JSON
+
+			with patch(
+				"broker.storage.load_events",
+				side_effect=lambda: real_load_events(str(event_log)),
+			), patch("broker.sck.socket") as fake_socket:
+				broker.start_broker()  
+
+			fake_socket.assert_not_called()
 
 if __name__ == "__main__":
 	ut.main()
