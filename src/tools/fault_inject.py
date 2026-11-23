@@ -2,10 +2,6 @@
 # spare port, breaks exactly one thing, checks what actually happened, and
 # writes the row in the report.
 # A case that still needs you to kill a window by hand isn't a case yet.
-
-
-
-
 import json
 
 from pathlib import Path
@@ -17,7 +13,7 @@ import socket
 import sys
 import multiprocessing
 import signal
-
+from datetime import datetime
 
 
 #starts test broker
@@ -122,7 +118,7 @@ def read_reply(connection):
 
 
 
-def main():
+def run_f01(observed):
     #This reads the selected fault case and displays it
     parser = argparse.ArgumentParser(description="VIGIL QA Tests")
     parser.add_argument("--case", required=True, choices=["F-01"])
@@ -235,6 +231,10 @@ def main():
 
             print("Baseline event verified on disk")
 
+            observed["baseline_event"] = baseline_event
+            observed["baseline_saved"] = True
+            observed["test_port"] = test_port
+
         #This enables the pause during the next event save
             armed.set()
 
@@ -262,6 +262,13 @@ def main():
 
                 print("Crash checkpoint reached")
 
+                
+                
+                observed["crash_point"] = "After temporary-file fsync, before replacement"
+
+
+
+
                 #This kills the test broker while the save is paused
                
                
@@ -272,6 +279,8 @@ def main():
                     raise RuntimeError("Test broker did not exit through SIGKILL")
 
                 print("Test broker killed with SIGKILL")
+
+                observed["crashed_broker_exit_code"] = broker_process.exitcode
 
 
 
@@ -286,6 +295,9 @@ def main():
 
             print("Committed log is valid JSON")
             print("Acknowledged baseline event preserved")
+
+            observed["committed_log_valid"] = True
+            observed["committed_log_unchanged"] = True
 
                         #This disables the crash checkpoint before restarting the broker
             armed.clear()
@@ -340,6 +352,11 @@ def main():
 
                 print("Replayed event:", replayed_event["event_id"])
                 print("Baseline replay verified after broker restart")
+
+
+
+                observed["replayed_event"] = replayed_event
+                observed["replay_matches_baseline"] = True
    
    
         finally:
@@ -352,9 +369,73 @@ def main():
             if broker_process.is_alive():
                 broker_process.kill()
                 broker_process.join(timeout=3)
+#confirmation before succesful cleanup
+           
+            if broker_process.is_alive():
+                raise RuntimeError("Test broker did not stop during cleanup")
+
+          
+          
+          
+          
+            observed["broker_stopped"] = True
 
             print("Test broker stopped")
 
+def main():
+    #This records the test result after the checks and cleanup finish
+    observed = {}
+    verdict = "FAIL"
+    error = None
+
+    try:
+        run_f01(observed)
+        verdict = "PASS"
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        print("Test error:", error)
+    except KeyboardInterrupt:
+        error = "Test interrupted by the user"
+        print(error)
+
+    result = {
+        "case": "F-01",
+        "date": datetime.now().astimezone().isoformat(),
+        "command": "python3 src/tools/fault_inject.py --case F-01",
+        "verdict": verdict,
+        "observed": observed,
+        "error": error,
+    }
+
+    #This appends the result to the project's fault test report
+    report_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "fault-test-report.md"
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with report_path.open("a", encoding="utf-8") as report:
+        report.write("\n### F-01 Automated Run\n\n")
+        report.write(f"**Date:** {result['date']}\n\n")
+        report.write(f"**Verdict:** {verdict}\n\n")
+        report.write(
+            "**Expected:** The acknowledged baseline survives SIGKILL "
+            "after temporary-file fsync and before replacement, "
+            "and replays unchanged after restart.\n\n"
+        )
+        report.write("**Observed results and evidence:**\n\n")
+        report.write("```json\n")
+        report.write(json.dumps(result, indent=2))
+        report.write("\n```\n")
+
+    print("F-01 result:", verdict)
+    print("Report updated:", report_path)
+
+    return 0 if verdict == "PASS" else 1
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
+
+
