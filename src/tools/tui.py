@@ -19,6 +19,7 @@ sys.path.insert(0, str(SRC))
 import subscriber as client_model  # noqa: E402
 from common import storage  # noqa: E402
 from common.constants import EVENT_LOG_FILE, OFFSETS_FILE  # noqa: E402
+from common.ids import normalise_id  # noqa: E402
 
 BG = "\033[48;2;18;16;14m"
 BONE = "\033[38;2;217;205;191m"
@@ -196,6 +197,19 @@ class BrokerState:
     @property
     def plain_events(self):
         return len(self.events) - self.alerts
+
+    def subscriber_counts(self, role):
+        sub_id = normalise_id(role)
+        offsets = self.offsets.get(sub_id, {})
+        received = queued = 0
+        for topic in client_model.SUBSCRIBERS[role]:
+            total = sum(1 for ev in self.events if ev["topic"] == topic)
+            last = offsets.get(topic, -1) if isinstance(offsets, dict) else -1
+            if not isinstance(last, int):
+                last = -1
+            received += min(total, last + 1)
+            queued += max(0, total - (last + 1))
+        return received, queued
 
 
 def command_for(role):
