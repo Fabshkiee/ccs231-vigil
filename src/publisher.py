@@ -201,7 +201,7 @@ def run_auto(link, role, interval):
         except BrokerRejected as exc:
             warn("pub", "broker_rejected", str(exc))
             # pause loop to follow interval
-            time.sleep(interval)
+        time.sleep(interval)
 
 def run_typed(link, role):
     """SightingReports / PoltergeistActivity mode, one typed line, one event."""
