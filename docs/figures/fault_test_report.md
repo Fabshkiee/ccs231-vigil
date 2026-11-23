@@ -729,4 +729,122 @@ No failures occurred in the existing code. Remaining gaps and questions:
 Overall unit-test suite: **PASSED 16/16**.
 
 Overall storage checklist: **INCOMPLETE**, with outstanding checks and integration verification.
-````
+
+
+## INTEGRATION TESTING (DEVELOPERS: JOHN MARK AND MJ)
+
+**Files that will be tested:** `src/broker.py`, `src/publisher.py`, and `src/subscriber.py`
+
+
+### I-1 (INTEGRATION TEST 1) Delivery to Matching Subscribers
+
+**Expected:**
+
+Both subscribers of `sighting` receive the published event. PublicShield, subscribed to `alert`, receives none during the observation window. The event is persisted, and routing follows the topic.
+
+**Date and code version:**
+
+November 23, 2026 — commit `3777526`..
+
+**Input messages / values:**
+
+Publisher role: `SightingReports`.
+
+Typed input:
+
+```text
+QA fanout check 002, severity 2
+```
+
+Subscribers:
+
+- ResponseTeam — ID `responseteam`, topics `sighting` and `poltergeist`.
+- ResearchArchive — ID `researcharchive`, topics `readings`, `sighting`, and `poltergeist`.
+- PublicShield — ID `publicshield`, topic `alert`.
+
+**Command to test used:**
+
+Broker startup from a temporary working folder:
+
+```bash
+project_dir="$PWD"
+test_dir="$(mktemp -d -t vigil-i01)"
+cd "$test_dir"
+python3 "$project_dir/src/broker.py"
+```
+
+Each client was started from the project folder in a separate terminal:
+
+```bash
+python3 src/subscriber.py --as ResponseTeam
+python3 src/subscriber.py --as ResearchArchive
+python3 src/subscriber.py --as PublicShield
+python3 src/publisher.py --as SightingReports
+```
+
+**Observation window:**
+
+[Enter the actual duration observed after publishing. Enter five seconds only if measured or observed.]
+
+**Observed results:**
+
+Publisher:
+
+```text
+Event faf56ce9 saved (sighting)
+```
+
+ResponseTeam:
+
+```text
+Event faf56ce9 — sighting: QA fanout check 002, severity 2
+```
+
+ResearchArchive:
+
+```text
+Event faf56ce9 — sighting: QA fanout check 002, severity 2
+```
+
+PublicShield remained quiet during the reported check. Its last displayed subscription message was:
+
+```text
+[sub] subscribed to alert
+```
+
+**Persistence / routing evidence:**
+
+The saved log contained the matching event:
+
+```json
+{
+  "event_id": "faf56ce95a8c4285b99fcd2a163c3dd7",
+  "topic": "sighting",
+  "payload": {
+    "kind": "QA fanout check 002",
+    "sev": 2,
+    "source": "SightingReports"
+  },
+  "created_at": 1795429263.975425
+}
+```
+
+Actual log location:
+
+```text
+src/common/data/event_log.json
+```
+
+The configuration selected this project data folder despite the broker's temporary working directory.
+
+Review of the supplied broker code shows `storage.append_event(event)` is called before subscriber delivery, and subscribers are selected using `subscriptions.get(topic, [])`. The terminal results demonstrate delivery to both matching subscribers. The saved log confirms persistence.
+
+**Evidence / log reference:**
+
+Publisher and subscriber terminal outputs, plus the matching event entry read from `event_log.json`.
+
+**Verdict:**
+
+Matching-subscriber delivery and persistence checks PASSED.
+
+Complete the non-matching-subscriber check by recording the actual observation duration. Persistence-before-delivery and topic-based subscriber selection are supported by review of the supplied broker code.
