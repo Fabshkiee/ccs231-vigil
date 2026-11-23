@@ -1331,6 +1331,222 @@ def run_f05(observed):
             observed["broker_stopped"] = True
             print("F-05 test broker stopped")
 
+def run_f06(observed):
+    #Check unread events remain available while all subscribers are offline
+    src_dir = Path(__file__).resolve().parents[1]
+    topic = "sighting"
+    slow_id = "f06-slow"
+    fast_id = "f06-fast"
+
+    observed["retention_policy"] = "Keep all events; no pruning"
+
+    with tempfile.TemporaryDirectory(prefix="vigil-f06-") as test_dir:
+        data_dir = Path(test_dir) / "data"
+        data_dir.mkdir()
+
+        event_log = data_dir / "event_log.json"
+        offsets_file = data_dir / "offsets.json"
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_socket:
+            test_socket.bind(("127.0.0.1", 0))
+            test_port = test_socket.getsockname()[1]
+
+        context = multiprocessing.get_context("spawn")
+        armed = context.Event()
+        checkpoint = context.Event()
+
+        broker_process = context.Process(
+            target=run_test_broker,
+            args=(
+                src_dir,
+                test_port,
+                event_log,
+                offsets_file,
+                armed,
+                checkpoint,
+            ),
+        )
+        observed["test_port"] = test_port
+
+        def publish_batch(first_number, count):
+            #Publish a batch and verify each acknowledged event on disk
+            accepted = []
+
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as publisher:
+                for number in range(first_number, first_number + count):
+                    payload = {
+                        "kind": f"F-06 retained event {number}",
+                        "sev": 2,
+                        "source": "fault_inject",
+                    }
+                    message = f"PUB|{topic}|{json.dumps(payload)}\n"
+                    publisher.sendall(message.encode("utf-8"))
+                    reply = read_reply(publisher)
+
+                    command, separator, event_id = reply.partition("|")
+
+                    if command != "PUB_ACK" or not separator or not event_id:
+                        raise RuntimeError(f"Expected PUB_ACK, received {reply}")
+
+                    accepted.append({
+                        "event_id": event_id,
+                        "payload": payload,
+                    })
+
+            saved_log = json.loads(event_log.read_text(encoding="utf-8"))
+            batch = saved_log.get(topic, [])[-count:]
+
+            if len(batch) != count:
+                raise RuntimeError("Published events are missing from the log")
+
+            for event, expected in zip(batch, accepted):
+                if (
+                    event.get("event_id") != expected["event_id"]
+                    or event.get("payload") != expected["payload"]
+                    or event.get("topic") != topic
+                ):
+                    raise RuntimeError("Saved event differs from its publish")
+
+            return batch
+
+        def replay_and_ack(subscriber_id, expected_events, final_offset,
+                           check_end=False):
+            #Receive expected events and acknowledge the last processed event
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as subscriber:
+                message = f"SUB|{topic}|{subscriber_id}\n"
+                subscriber.sendall(message.encode("utf-8"))
+
+                if read_reply(subscriber) != f"SUB_ACK|{topic}":
+                    raise RuntimeError("Subscription was not acknowledged")
+
+                received = []
+
+                for expected_event in expected_events:
+                    reply = read_reply(subscriber)
+                    command, separator, event_json = reply.partition("|")
+
+                    if command != "EVENT" or not separator:
+                        raise RuntimeError(f"Expected EVENT, received {reply}")
+
+                    event = json.loads(event_json)
+                    received.append(event)
+
+                    if event != expected_event:
+                        raise RuntimeError(
+                            f"Unexpected replay event for {subscriber_id}"
+                        )
+
+                event_id = received[-1]["event_id"]
+                message = f"ACK|{topic}|{subscriber_id}|{event_id}\n"
+                subscriber.sendall(message.encode("utf-8"))
+
+                deadline = time.monotonic() + 5
+
+                while read_offset(
+                    offsets_file, subscriber_id, topic
+                ) != final_offset:
+                    if not broker_process.is_alive():
+                        raise RuntimeError("Broker exited while saving the ACK")
+
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("Subscriber offset was not saved")
+
+                    time.sleep(0.05)
+
+                if check_end:
+                    #Check for unexpected events after the expected replay
+                    subscriber.settimeout(0.3)
+
+                    try:
+                        extra = subscriber.recv(1)
+                    except socket.timeout:
+                        pass
+                    else:
+                        if extra:
+                            raise RuntimeError("Unexpected extra replay data")
+                        raise RuntimeError("Broker closed the connection")
+
+            return received
+
+        try:
+            broker_process.start()
+            wait_for_broker(broker_process, test_port)
+            print("F-06 test broker is ready")
+
+            initial_events = publish_batch(1, 3)
+
+            if len(json.loads(
+                event_log.read_text(encoding="utf-8")
+            ).get(topic, [])) != 3:
+                raise RuntimeError("Expected exactly three initial events")
+
+            #Give the subscribers different acknowledged positions
+            replay_and_ack(slow_id, initial_events[:1], 0)
+            replay_and_ack(fast_id, initial_events, 2)
+
+            offsets_before = json.loads(
+                offsets_file.read_text(encoding="utf-8")
+            )
+            observed["offsets_before_offline_publish"] = offsets_before
+            observed["initial_events"] = initial_events
+
+            print("Slow subscriber offset: 0")
+            print("Fast subscriber offset: 2")
+            print("Both subscribers disconnected")
+
+            #Publish more events while both subscriber connections are closed
+            offline_events = publish_batch(4, 2)
+            retained_events = json.loads(
+                event_log.read_text(encoding="utf-8")
+            ).get(topic, [])
+
+            observed["offline_events"] = offline_events
+            observed["retained_events"] = retained_events
+
+            if retained_events != initial_events + offline_events:
+                raise RuntimeError("Previously saved events were lost or changed")
+
+            offsets_after = json.loads(
+                offsets_file.read_text(encoding="utf-8")
+            )
+            observed["offsets_after_offline_publish"] = offsets_after
+
+            if offsets_after != offsets_before:
+                raise RuntimeError("Offsets changed while subscribers were offline")
+
+            print("All five events retained")
+            print("Offline subscriber offsets unchanged")
+
+            #Verify each subscriber recovers all events after its own offset
+            slow_replay = replay_and_ack(
+                slow_id, retained_events[1:], 4, check_end=True
+            )
+            observed["slow_subscriber_replay"] = slow_replay
+
+            fast_replay = replay_and_ack(
+                fast_id, retained_events[3:], 4, check_end=True
+            )
+            observed["fast_subscriber_replay"] = fast_replay
+
+            observed["final_offsets"] = json.loads(
+                offsets_file.read_text(encoding="utf-8")
+            )
+            observed["all_events_retained"] = True
+
+            print("Slow subscriber recovered four unread events")
+            print("Fast subscriber recovered two unread events")
+            print("Both subscriber offsets advanced to 4")
+
+        finally:
+            #Stop the test broker before removing temporary data
+            stop_test_process(broker_process)
+            observed["broker_stopped"] = True
+            print("F-06 test broker stopped")
+
 def main():
     #reads the selected fault case and displays it
     cases = {
@@ -1339,6 +1555,7 @@ def main():
         "F-03": run_f03,
         "F-04": run_f04,
         "F-05": run_f05,
+        "F-06": run_f06,
     }
 
 
@@ -1367,6 +1584,11 @@ def main():
             "Saved events and subscriber offsets survive a broker crash. "
             "After restart, the same subscriber ID receives only its two "
             "unacknowledged events in log order."
+        ),
+        "F-06": (
+            "Under the keep-all policy, events remain available while both "
+            "subscribers are offline. Each subscriber recovers its unread "
+            "events in order using its own offset. Pruning is not implemented."
         ),
     }
 
