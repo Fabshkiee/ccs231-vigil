@@ -52,12 +52,17 @@ ACCENT = {
     "ResponseTeam": MOSS,
     "PublicShield": CYAN,
     "ResearchArchive": SLATE,
+    "SightingReports": BRASS,
+    "PoltergeistActivity": BRASS,
+    "ParanormalReadings": BRASS,
     "broker": EMBER,
 }
 TITLES = {"broker": ["VIGIL"], "ResponseTeam": ["RESPONSE"], "PublicShield": ["SHIELD"],
-          "ResearchArchive": ["ARCHIVE"]}
+          "ResearchArchive": ["ARCHIVE"], "SightingReports": ["SIGHTINGS"],
+          "PoltergeistActivity": ["POLTER"], "ParanormalReadings": ["READINGS"]}
 COMPACT = {"broker": "VIGIL", "ResponseTeam": "RESPONSE", "PublicShield": "SHIELD",
-           "ResearchArchive": "ARCHIVE"}
+           "ResearchArchive": "ARCHIVE", "SightingReports": "SIGHTINGS",
+           "PoltergeistActivity": "POLTERGEIST", "ParanormalReadings": "READINGS"}
 
 GLYPHS = {
     "A": (" █████╗ ", "██╔══██╗", "███████║", "██╔══██║", "██║  ██║", "╚═╝  ╚═╝"),
