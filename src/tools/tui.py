@@ -501,9 +501,9 @@ def leave_screen():
     sys.stdout.flush()
 
 
-def draw(state, child):
+def draw(state, child, role="broker"):
     width, height = shutil.get_terminal_size((231, 13))
-    lines = lines_for(state, child, time.time(), width, height)
+    lines = lines_for(state, child, time.time(), width, height, role)
     sys.stdout.write(frame(lines, height))
     sys.stdout.flush()
 
@@ -527,7 +527,7 @@ def restart_prompt(term):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="VIGIL demo wall, broker pane")
-    parser.add_argument("--role", default="broker", choices=["broker"])
+    parser.add_argument("--role", default="broker", choices=["broker", "ResponseTeam"])
     parser.add_argument("--once", action="store_true", help="render one frame and exit")
     parser.add_argument("--plain", action="store_true", help="strip colour in --once")
     parser.add_argument("--width", type=int, help="width for --once")
@@ -541,7 +541,7 @@ def main(argv=None):
         size = shutil.get_terminal_size((231, 13))
         width = args.width or size.columns
         height = args.height or size.lines
-        lines = lines_for(state, None, time.time(), width, height)
+        lines = lines_for(state, None, time.time(), width, height, args.role)
         text = "\n".join(lines)
         print(ANSI.sub("", text) if (args.plain or not sys.stdout.isatty()) else text)
         return 0
@@ -553,7 +553,7 @@ def main(argv=None):
     _win_vt()
     term = Terminal()
     term.raw_mode()
-    enter_screen("VIGIL — Broker")
+    enter_screen("VIGIL — Broker" if args.role == "broker" else f"{args.role} — Subscriber")
     child = Child()
     child.start(command_for(args.role))
     try:
@@ -561,12 +561,12 @@ def main(argv=None):
             try:
                 while child.alive():
                     state.refresh()
-                    draw(state, child)
+                    draw(state, child, args.role)
                     time.sleep(0.2)
             except KeyboardInterrupt:
                 child.stop()
             state.refresh()
-            draw(state, child)
+            draw(state, child, args.role)
             if not restart_prompt(term):
                 break
             child.start(command_for(args.role))
