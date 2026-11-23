@@ -6,7 +6,7 @@
 
 
 
-
+import json
 
 from pathlib import Path
 import argparse
@@ -55,6 +55,28 @@ def wait_for_broker(process, test_port):
     raise TimeoutError("Test broker did not start within 5 seconds")
 
 
+def read_reply(connection):
+    deadline = time.monotonic() + 5
+    reply = bytearray()
+
+    while not reply.endswith(b"\n"):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Broker reply took too long")
+
+        connection.settimeout(remaining)
+        chunk = connection.recv(1)
+
+        if not chunk:
+            raise ConnectionError("Broker closed before replying")
+
+        reply.extend(chunk)
+
+        if len(reply) > 1024 * 1024:
+            raise ValueError("Broker reply is too large")
+
+    return reply.decode("utf-8").rstrip("\r\n")
+
 
 
 def main():
@@ -64,6 +86,7 @@ def main():
 
 
    
+
    
     args = parser.parse_args()
     print("Selected case:", args.case)
@@ -108,12 +131,62 @@ def main():
         broker_process.start()
 
         try:
+
+
+
             wait_for_broker(broker_process, test_port)
             print("Test broker is ready")
+            
+            
+            payload = {
+                "kind": "F-01 baseline",
+                "sev": 2,
+                "source": "fault_inject",
+            }
+
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as publisher:
+                message = f"PUB|sighting|{json.dumps(payload)}\n"
+                publisher.sendall(message.encode("utf-8"))
+                reply = read_reply(publisher)
+
+            command, separator, event_id = reply.partition("|")
+
+            if command != "PUB_ACK" or not separator or not event_id:
+                raise RuntimeError(f"Expected PUB_ACK, received {reply}")
+
+            print("Baseline acknowledged:", event_id)
+
+            baseline_bytes = event_log.read_bytes()
+            saved_log = json.loads(baseline_bytes)
+            saved_events = saved_log.get("sighting", [])
+
+            if len(saved_events) != 1:
+                raise RuntimeError("Expected one baseline event")
+
+            baseline_event = saved_events[0]
+
+
+
+            if (
+                baseline_event.get("event_id") != event_id
+                or baseline_event.get("topic") != "sighting"
+                or baseline_event.get("payload") != payload
+            ):
+                raise RuntimeError("Saved event does not match the publish")
+
+
+
+            print("Baseline event verified on disk")
+   
+   
         finally:
             if broker_process.is_alive():
                 os.kill(broker_process.pid, signal.SIGINT)
+            
                 broker_process.join(timeout=3)
+
 
             if broker_process.is_alive():
                 broker_process.kill()
