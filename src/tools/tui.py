@@ -53,8 +53,8 @@ ACCENT = {
     "ResearchArchive": SLATE,
     "broker": EMBER,
 }
-TITLES = {"broker": ["VIGIL"], "ResponseTeam": ["RESPONSE"]}
-COMPACT = {"broker": "VIGIL", "ResponseTeam": "RESPONSE"}
+TITLES = {"broker": ["VIGIL"], "ResponseTeam": ["RESPONSE"], "PublicShield": ["SHIELD"]}
+COMPACT = {"broker": "VIGIL", "ResponseTeam": "RESPONSE", "PublicShield": "SHIELD"}
 
 GLYPHS = {
     "A": (" █████╗ ", "██╔══██╗", "███████║", "██╔══██║", "██║  ██║", "╚═╝  ╚═╝"),
