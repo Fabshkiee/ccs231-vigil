@@ -4,7 +4,7 @@
 # allowed to route by topic.
 import argparse, random, socket, sys, time, re
 
-from common.constants import SEV_MIN, SEV_MAX, ALERT_MIN_SEV
+from common.constants import SEV_MIN, SEV_MAX, ALERT_MIN_SEV, PORT
 from common.log import warn, info
 from common.protocol import Err, format_pub, parse_line, split_lines
 
@@ -222,17 +222,17 @@ def main(argv=None):
     role = args.role
     try:
         # open tcp connection to the broker
-        link = connect(args.host, PORT, PUB_ACK_TIMEOUT_S)
+        link = connect(HOST, PORT, PUB_ACK_TIMEOUT_S)
     except OSError as exc:
         # if broker isn't running/unreachable
-        warn("pub", "cannot_connect", f"{args.host}:{PORT} {exc}")
+        warn("pub", "cannot_connect", f"{HOST}:{PORT} {exc}")
         return 1
     # confirm connection
-    info("pub", f"{role} connected to {args.host}:{PORT}")
+    info("pub", f"{role} connected to {HOST}:{PORT}")
     try:
         # route execution based on role
         if role == AUTO_ROLE:
-            run_auto(link, role, args.interval)
+            run_auto(link, role, READINGS_INTERVAL_S)
         else:
             run_typed(link, role)
     except LinkError as exc:
