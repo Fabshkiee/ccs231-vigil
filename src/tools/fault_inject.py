@@ -1547,6 +1547,198 @@ def run_f06(observed):
             observed["broker_stopped"] = True
             print("F-06 test broker stopped")
 
+
+def run_f07(observed):
+    #Check that a duplicate subscriber ID replaces the old connection
+    src_dir = Path(__file__).resolve().parents[1]
+    subscriber_id = "f07-check"
+    topic = "sighting"
+
+    with tempfile.TemporaryDirectory(prefix="vigil-f07-") as test_dir:
+        data_dir = Path(test_dir) / "data"
+        data_dir.mkdir()
+
+        event_log = data_dir / "event_log.json"
+        offsets_file = data_dir / "offsets.json"
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_socket:
+            test_socket.bind(("127.0.0.1", 0))
+            test_port = test_socket.getsockname()[1]
+
+        context = multiprocessing.get_context("spawn")
+        armed = context.Event()
+        checkpoint = context.Event()
+
+        broker_process = context.Process(
+            target=run_test_broker,
+            args=(
+                src_dir,
+                test_port,
+                event_log,
+                offsets_file,
+                armed,
+                checkpoint,
+            ),
+        )
+
+        observed["test_port"] = test_port
+        observed["subscriber_id"] = subscriber_id
+
+        def publish_event(kind):
+            #Publish and verify one identifiable event
+            payload = {
+                "kind": kind,
+                "sev": 2,
+                "source": "fault_inject",
+            }
+
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as publisher:
+                message = f"PUB|{topic}|{json.dumps(payload)}\n"
+                publisher.sendall(message.encode("utf-8"))
+                reply = read_reply(publisher)
+
+            command, separator, event_id = reply.partition("|")
+
+            if command != "PUB_ACK" or not separator or not event_id:
+                raise RuntimeError(f"Expected PUB_ACK, received {reply}")
+
+            saved_events = json.loads(
+                event_log.read_text(encoding="utf-8")
+            ).get(topic, [])
+
+            if not saved_events:
+                raise RuntimeError("Published event is missing from the log")
+
+            event = saved_events[-1]
+
+            if (
+                event.get("event_id") != event_id
+                or event.get("topic") != topic
+                or event.get("payload") != payload
+            ):
+                raise RuntimeError("Saved event differs from the publish")
+
+            return event
+
+        def subscribe(connection):
+            #Register the test subscriber and check its acknowledgment
+            message = f"SUB|{topic}|{subscriber_id}\n"
+            connection.sendall(message.encode("utf-8"))
+            reply = read_reply(connection)
+
+            if reply != f"SUB_ACK|{topic}":
+                raise RuntimeError(f"Unexpected subscription reply: {reply}")
+
+        def receive_event(connection):
+            #Read one complete event from the test connection
+            reply = read_reply(connection)
+            command, separator, event_json = reply.partition("|")
+
+            if command != "EVENT" or not separator:
+                raise RuntimeError(f"Expected EVENT, received {reply}")
+
+            return json.loads(event_json)
+
+        def acknowledge(connection, event, expected_offset):
+            #Wait for the broker to save the acknowledged position
+            message = f"ACK|{topic}|{subscriber_id}|{event['event_id']}\n"
+            connection.sendall(message.encode("utf-8"))
+            deadline = time.monotonic() + 5
+
+            while read_offset(
+                offsets_file, subscriber_id, topic
+            ) != expected_offset:
+                if not broker_process.is_alive():
+                    raise RuntimeError("Broker exited while saving the ACK")
+
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Subscriber offset was not saved")
+
+                time.sleep(0.05)
+
+        try:
+            broker_process.start()
+            wait_for_broker(broker_process, test_port)
+            print("F-07 test broker is ready")
+
+            warmup_event = publish_event("F-07 warmup")
+
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as old_subscriber:
+                subscribe(old_subscriber)
+
+                if receive_event(old_subscriber) != warmup_event:
+                    raise RuntimeError("Old subscriber received the wrong warmup")
+
+                acknowledge(old_subscriber, warmup_event, 0)
+                observed["offset_before_replacement"] = 0
+                print("Old subscriber registered and acknowledged warmup")
+
+                with socket.create_connection(
+                    ("127.0.0.1", test_port), timeout=5
+                ) as new_subscriber:
+                    #Replace the old connection using the same subscriber ID
+                    subscribe(new_subscriber)
+                    old_subscriber.settimeout(5)
+
+                    try:
+                        remaining = old_subscriber.recv(1)
+                    except ConnectionResetError:
+                        remaining = b""
+
+                    if remaining:
+                        raise RuntimeError("Old connection received unexpected data")
+
+                    observed["old_socket_closed"] = True
+                    print("Old subscriber connection closed")
+
+                    #Check live delivery on the replacement connection
+                    live_event = publish_event("F-07 replacement delivery")
+                    received_event = receive_event(new_subscriber)
+
+                    observed["published_event"] = live_event
+                    observed["replacement_received_event"] = received_event
+
+                    if received_event != live_event:
+                        raise RuntimeError("Replacement received the wrong event")
+
+                    acknowledge(new_subscriber, live_event, 1)
+                    observed["offset_after_replacement_ack"] = 1
+
+                    #Check that the replacement receives no extra copy
+                    new_subscriber.settimeout(0.3)
+
+                    try:
+                        extra = new_subscriber.recv(1)
+                    except socket.timeout:
+                        pass
+                    else:
+                        if extra:
+                            raise RuntimeError("Replacement received extra event data")
+                        raise RuntimeError("Replacement connection closed unexpectedly")
+
+                    observed["extra_data_observation_seconds"] = 0.3
+                    observed["replacement_received_one_copy"] = True
+
+            saved_events = json.loads(
+                event_log.read_text(encoding="utf-8")
+            ).get(topic, [])
+
+            if saved_events != [warmup_event, live_event]:
+                raise RuntimeError("Stored events changed during replacement")
+
+            print("New subscriber received the published event once")
+            print("Replacement ACK advanced the offset to 1")
+
+        finally:
+            #Stop the test broker before removing temporary data
+            stop_test_process(broker_process)
+            observed["broker_stopped"] = True
+            print("F-07 test broker stopped")
+
 def main():
     #reads the selected fault case and displays it
     cases = {
@@ -1556,6 +1748,7 @@ def main():
         "F-04": run_f04,
         "F-05": run_f05,
         "F-06": run_f06,
+        "F-07": run_f07,
     }
 
 
@@ -1589,6 +1782,11 @@ def main():
             "Under the keep-all policy, events remain available while both "
             "subscribers are offline. Each subscriber recovers its unread "
             "events in order using its own offset. Pruning is not implemented."
+        ),
+        "F-07": (
+            "A second connection using the same subscriber ID closes the old "
+            "connection. The replacement receives the published event once "
+            "and advances the shared subscriber offset through ACK."
         ),
     }
 
