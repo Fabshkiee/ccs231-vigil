@@ -527,7 +527,7 @@ def restart_prompt(term):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="VIGIL demo wall, broker pane")
-    parser.add_argument("--role", default="broker", choices=["broker", "ResponseTeam"])
+    parser.add_argument("--role", default="broker", choices=["broker", "ResponseTeam", "PublicShield"])
     parser.add_argument("--once", action="store_true", help="render one frame and exit")
     parser.add_argument("--plain", action="store_true", help="strip colour in --once")
     parser.add_argument("--width", type=int, help="width for --once")
