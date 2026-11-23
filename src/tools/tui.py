@@ -140,3 +140,381 @@ def title_block(role, width, big):
     return [[IND, (accent, "▌ "), (BOLD + BONE, COMPACT[role])]]
 
 
+class BrokerState:
+    def __init__(self):
+        self.events = []
+        self.offsets = {}
+        self.error = ""
+        self._sig = None
+
+    @staticmethod
+    def _signature():
+        sig = []
+        for path in (EVENT_LOG_FILE, OFFSETS_FILE):
+            try:
+                st = os.stat(path)
+            except FileNotFoundError:
+                sig.append(None)
+            else:
+                sig.append((st.st_mtime_ns, st.st_size))
+        return tuple(sig)
+
+    def refresh(self):
+        sig = self._signature()
+        if sig == self._sig:
+            return
+        self._sig = sig
+        try:
+            events = storage.load_events()
+            offsets = storage.load_offsets()
+        except (storage.StoreError, OSError) as exc:
+            self.error = str(exc)
+            return
+        self.error = ""
+        flat = []
+        for topic, items in events.items():
+            if not isinstance(items, list):
+                continue
+            for ev in items:
+                if not isinstance(ev, dict):
+                    continue
+                payload = ev.get("payload")
+                flat.append({
+                    "event_id": str(ev.get("event_id", "")),
+                    "topic": str(ev.get("topic", topic)),
+                    "payload": payload if isinstance(payload, dict) else {},
+                    "created_at": float(ev.get("created_at", 0) or 0),
+                })
+        flat.sort(key=lambda e: e["created_at"])
+        self.events = flat
+        self.offsets = offsets if isinstance(offsets, dict) else {}
+
+    @property
+    def alerts(self):
+        return sum(1 for ev in self.events if ev["topic"] == "alert")
+
+    @property
+    def plain_events(self):
+        return len(self.events) - self.alerts
+
+
+class Child:
+    def __init__(self):
+        self.proc = None
+        self.lines = deque(maxlen=200)
+        self.spawn_time = 0.0
+        self.stopped_at = None
+        self._reader = None
+
+    def start(self):
+        self.lines.clear()
+        self.stopped_at = None
+        self.spawn_time = time.time()
+        cmd = [sys.executable, "-u", str(SRC / "broker.py")]
+        self.proc = subprocess.Popen(
+            cmd,
+            cwd=str(ROOT),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        self._reader = threading.Thread(target=self._read, daemon=True)
+        self._reader.start()
+
+    def _read(self):
+        try:
+            for line in self.proc.stdout:
+                self.lines.append(line.rstrip("\n"))
+        except (OSError, ValueError):
+            pass
+
+    def alive(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def last_line(self):
+        for line in reversed(list(self.lines)):
+            if line.strip():
+                return line.strip()
+        return ""
+
+    def stop(self):
+        if not self.alive():
+            self.stopped_at = time.time()
+            return
+        if os.name == "posix":
+            try:
+                self.proc.send_signal(signal.SIGINT)
+            except OSError:
+                pass
+        try:
+            self.proc.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        self.stopped_at = time.time()
+
+
+def mmss(seconds):
+    seconds = max(0, int(seconds))
+    return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+
+def hhmmss(ts):
+    return time.strftime("%H:%M:%S", time.localtime(ts))
+
+
+def luminance(rank, now, ts):
+    if rank == 0 and now - ts < 0.7:
+        return BOLD + FLASH
+    return (BONE, STONE, ASH, ASH, ASH)[min(rank, 4)]
+
+
+def status_spans(child):
+    if child is None:
+        return [(ASH, "○ preview")], ""
+    if not child.alive():
+        err = child.last_line()
+        return [(BLOOD, "○ stopped"), (ASH, " · Enter restarts")], err
+    if any("Listening on" in line for line in list(child.lines)):
+        return [(MOSS, "● "), (BONE, "listening")], ""
+    return [(BRASS, "● "), (BONE, "starting")], ""
+
+
+def stats_rows(subs, up, events, alerts):
+    # The broker logs no SUBSCRIBE, so a live count would need graded-code changes.
+    # "acked" is a past-tense fact that survives a killed subscriber's pane.
+    values = (
+        ("acked", str(subs), BONE),
+        ("uptime", mmss(up) if up is not None else "--:--", BONE),
+        ("events", str(events), BONE),
+        ("alerts", str(alerts), BLOOD),
+    )
+    return [
+        [IND, (ASH, f"{label:<12}"), (BOLD + colour, f"{value:>6}")]
+        for label, value, colour in values
+    ]
+
+
+def route_rows():
+    rows = []
+    for topic in TOPIC_ORDER:
+        subs = [sub for sub in SUBSCRIBERS if topic in client_model.SUBSCRIBERS[sub]]
+        spans = [
+            IND,
+            (BLOOD if topic == "alert" else TAG, f"{SHORT_TOPIC[topic]:<11}"),
+            (ASH, " →  "),
+        ]
+        for i, sub in enumerate(subs):
+            if i:
+                spans.append((ASH, " · "))
+            spans.append((ACCENT[sub], sub))
+        rows.append(spans)
+    return rows
+
+
+def bus_feed_rows(events, now, limit):
+    if not events:
+        return [[IND, (ASH, "○ waiting for events")]]
+    rows = []
+    for rank, ev in enumerate(reversed(events[-limit:])):
+        topic = ev["topic"]
+        text = client_model.describe(ev["payload"])
+        rows.append([
+            (BLOOD, "▲ ") if topic == "alert" else (None, "  "),
+            (ASH, hhmmss(ev["created_at"])),
+            (None, "  "),
+            (BLOOD if topic == "alert" else TAG, f"{SHORT_TOPIC.get(topic, topic.upper()):<11}"),
+            (None, "  "),
+            (ASH, ev["event_id"][:8] + "  "),
+            (luminance(rank, now, ev["created_at"]), text),
+        ])
+    return rows
+
+
+def build_broker(state, now, width, big, status, err, up):
+    gap = 3
+    lw = max(30, int(width * 0.26))
+    mw = max(40, int(width * 0.28))
+    rw = width - (lw + gap) - (mw + gap)
+
+    left = title_block("broker", width, big) + stats_rows(
+        len(state.offsets), up, state.plain_events, state.alerts)
+    mid = [[IND, (STONE + BOLD, "ROUTING")], []] + route_rows()
+    right = [split([IND, (STONE + BOLD, "LIVE BUS FEED")], status, rw),
+             [IND, (ASH, err)] if err else []]
+    right += bus_feed_rows(state.events, now, 7)
+
+    n = max(len(left), len(mid), len(right))
+
+    def pad(rows):
+        return rows + [[] for _ in range(n - len(rows))]
+
+    return [[]] + join3(pad(left), pad(mid), pad(right), lw, mw, gap)
+
+
+def lines_for(state, child, now, width, height):
+    if width < 120 or height < 10:
+        return [
+            "",
+            f"  VIGIL — broker needs a wider window ({width}×{height})",
+            "  resize to at least 150×12; 231×13 is the target",
+        ]
+    status, err = status_spans(child)
+    up = None
+    if child is not None and child.spawn_time:
+        up = (child.stopped_at or now) - child.spawn_time
+    for big in (True, False):
+        rows = build_broker(state, now, width, big, status, err, up)
+        if len(rows) <= height - 1:
+            break
+    return [paint(row, width - 1) for row in rows][:height - 1]
+
+
+def frame(lines, height):
+    out = ["\033[H"]
+    for i in range(height - 1):
+        out.append((lines[i] if i < len(lines) else "") + "\033[K\r\n")
+    out.append("\033[K")
+    return "".join(out)
+
+
+class Terminal:
+    def __init__(self):
+        self.fd = None
+        self.old = None
+
+    def raw_mode(self):
+        if os.name == "posix" and sys.stdin.isatty():
+            import termios
+            import tty
+            self.fd = sys.stdin.fileno()
+            if self.old is None:
+                self.old = termios.tcgetattr(self.fd)
+            tty.setcbreak(self.fd)
+        elif os.name == "nt":
+            _win_echo(False)
+
+    def line_mode(self):
+        if os.name == "posix" and self.old is not None:
+            import termios
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old)
+        elif os.name == "nt":
+            _win_echo(True)
+
+
+def _win_echo(enabled):
+    if os.name != "nt":
+        return
+    import ctypes
+    kernel = ctypes.windll.kernel32
+    handle = kernel.GetStdHandle(-10)
+    mode = ctypes.c_uint(0)
+    if kernel.GetConsoleMode(handle, ctypes.byref(mode)):
+        flag = 0x0004
+        kernel.SetConsoleMode(handle, mode.value | flag if enabled else mode.value & ~flag)
+
+
+def _win_vt():
+    if os.name != "nt":
+        return
+    import ctypes
+    kernel = ctypes.windll.kernel32
+    handle = kernel.GetStdHandle(-11)
+    mode = ctypes.c_uint(0)
+    if kernel.GetConsoleMode(handle, ctypes.byref(mode)):
+        kernel.SetConsoleMode(handle, mode.value | 0x0004)
+
+
+def enter_screen(title):
+    sys.stdout.write(f"\033]0;{title}\007\033[?1049h\033[?25l" + BG + "\033[2J")
+    sys.stdout.flush()
+
+
+def leave_screen():
+    sys.stdout.write(OFF + "\033[?25h\033[?1049l")
+    sys.stdout.flush()
+
+
+def draw(state, child):
+    width, height = shutil.get_terminal_size((231, 13))
+    lines = lines_for(state, child, time.time(), width, height)
+    sys.stdout.write(frame(lines, height))
+    sys.stdout.flush()
+
+
+def restart_prompt(term):
+    height = shutil.get_terminal_size((231, 13)).lines
+    row = max(1, height - 1)
+    term.line_mode()
+    sys.stdout.write(f"\033[?25h\033[{row};1H\033[K[Enter] restart  ·  Ctrl+C quit ")
+    sys.stdout.flush()
+    try:
+        input()
+        return True
+    except (KeyboardInterrupt, EOFError):
+        return False
+    finally:
+        sys.stdout.write("\033[?25l")
+        sys.stdout.flush()
+        term.raw_mode()
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="VIGIL demo wall, broker pane")
+    parser.add_argument("--role", default="broker", choices=["broker"])
+    parser.add_argument("--once", action="store_true", help="render one frame and exit")
+    parser.add_argument("--plain", action="store_true", help="strip colour in --once")
+    parser.add_argument("--width", type=int, help="width for --once")
+    parser.add_argument("--height", type=int, help="height for --once")
+    args = parser.parse_args(argv)
+
+    state = BrokerState()
+    state.refresh()
+
+    if args.once:
+        size = shutil.get_terminal_size((231, 13))
+        width = args.width or size.columns
+        height = args.height or size.lines
+        lines = lines_for(state, None, time.time(), width, height)
+        text = "\n".join(lines)
+        print(ANSI.sub("", text) if (args.plain or not sys.stdout.isatty()) else text)
+        return 0
+
+    if not sys.stdout.isatty():
+        print("tui: run this in a terminal (or use --once --plain)")
+        return 2
+
+    _win_vt()
+    term = Terminal()
+    term.raw_mode()
+    enter_screen("VIGIL — Broker")
+    child = Child()
+    child.start()
+    try:
+        while True:
+            try:
+                while child.alive():
+                    state.refresh()
+                    draw(state, child)
+                    time.sleep(0.2)
+            except KeyboardInterrupt:
+                child.stop()
+            state.refresh()
+            draw(state, child)
+            if not restart_prompt(term):
+                break
+            child.start()
+    finally:
+        child.stop()
+        term.line_mode()
+        leave_screen()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
