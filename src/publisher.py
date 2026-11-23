@@ -25,7 +25,6 @@ ROLES = {
 
 SEV_WORD = "severity"
 AUTO_ROLE = "ParanormalReadings"
-SEV_WORD = "severity"
 RECV_BYTES = 4096
 SHORT_ID_LEN = 8
 ALERT_TOPIC = "alert"
