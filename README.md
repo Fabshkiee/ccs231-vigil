@@ -9,7 +9,7 @@
 
 ## Status
 
-Skeleton only. The tree below is the plan; the only committed files today are this README, the empty dependency list, and placeholder directories. The broker and clients land at M3, the fault matrix at M4, and the packaging at M5.
+The graded pub/sub backend is complete. Graded output stays line-oriented and plain — no banners, panels or colour gates. An optional seven-window demo wall was added afterwards as tooling; it lives in `src/tools/tui.py` and is never imported by the broker, clients or tests.
 
 ## What it does
 
@@ -43,12 +43,13 @@ The full plate — process boundary, both JSON files, lock names, replay lane �
 python3 --version                  # 3.11 or newer
 
 python3 src/broker.py
-python3 src/subscriber.py --as ResponseTeam  --topics sighting,poltergeist
-python3 src/subscriber.py --as PublicShield  --topics alert
+python3 src/subscriber.py --as ResponseTeam
+python3 src/subscriber.py --as PublicShield
+python3 src/subscriber.py --as ResearchArchive
 python3 src/publisher.py  --as SightingReports
 ```
 
-Four terminals, one process each. The demo sequence and expected output are in the System Design Document.
+Subscribers select their topics by role with `--as <Role>`; there is no `--topics` flag. One process per terminal. The demo sequence and expected output are in the System Design Document.
 
 ## Repository layout
 
@@ -62,16 +63,23 @@ Four terminals, one process each. The demo sequence and expected output are in t
 │   ├── fault-test-report.md
 │   └── figures/
 │       └── architecture.png
+├── demos/
+│   ├── mac-wall.command    # optional seven-window wall (macOS)
+│   ├── windows-wall.bat    # optional seven-window wall (Windows)
+│   ├── windows-wall.ps1
+│   ├── mac-demo.command
+│   └── windows-demo.*      # plain-CLI fallback
 ├── src/
 │   ├── common/             # the shared contract
 │   ├── broker.py
 │   ├── publisher.py
 │   ├── subscriber.py
 │   └── tools/
+│       ├── tui.py          # optional demo wall, never imported by graded code
 │       └── fault_inject.py
 ├── tests/
 ├── scripts/
-└── data/                   # runtime only, never committed
+└── src/common/data/        # runtime only, never committed
 ```
 
 Why it looks like this:
