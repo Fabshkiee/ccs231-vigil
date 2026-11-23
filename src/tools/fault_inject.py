@@ -846,7 +846,7 @@ def run_f03(observed):
             print("F-03 test processes stopped")
 
 
-            
+
 def publish_f04_events(test_port, publisher_name, start_barrier):
     #Publish identifiable events after both publishers are connected
     accepted_events = []
@@ -1099,6 +1099,238 @@ def run_f04(observed):
             print("F-04 test broker stopped")
 
 
+
+def run_f05(observed):
+    #Check saved events and ACK offsets after a broker restart
+    src_dir = Path(__file__).resolve().parents[1]
+    subscriber_id = "f05-check"
+    topic = "sighting"
+
+    with tempfile.TemporaryDirectory(prefix="vigil-f05-") as test_dir:
+        data_dir = Path(test_dir) / "data"
+        data_dir.mkdir()
+
+        event_log = data_dir / "event_log.json"
+        offsets_file = data_dir / "offsets.json"
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_socket:
+            test_socket.bind(("127.0.0.1", 0))
+            test_port = test_socket.getsockname()[1]
+
+        context = multiprocessing.get_context("spawn")
+        armed = context.Event()
+        checkpoint = context.Event()
+
+        broker_process = context.Process(
+            target=run_test_broker,
+            args=(
+                src_dir,
+                test_port,
+                event_log,
+                offsets_file,
+                armed,
+                checkpoint,
+            ),
+        )
+
+        observed["test_port"] = test_port
+        observed["subscriber_id"] = subscriber_id
+
+        def receive_event(connection):
+            #Read one replayed event from the broker
+            reply = read_reply(connection)
+            command, separator, event_json = reply.partition("|")
+
+            if command != "EVENT" or not separator:
+                raise RuntimeError(f"Expected EVENT, received {reply}")
+
+            event = json.loads(event_json)
+
+            if not isinstance(event, dict):
+                raise RuntimeError("Received event is not an object")
+
+            return event
+
+        def acknowledge_event(connection, event, expected_offset):
+            #Send an ACK and wait for its stored offset
+            message = f"ACK|{topic}|{subscriber_id}|{event['event_id']}\n"
+            connection.sendall(message.encode("utf-8"))
+            deadline = time.monotonic() + 5
+
+            while read_offset(
+                offsets_file, subscriber_id, topic
+            ) != expected_offset:
+                if not broker_process.is_alive():
+                    raise RuntimeError("Broker exited while saving the ACK")
+
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("ACK offset was not saved")
+
+                time.sleep(0.05)
+
+        try:
+            broker_process.start()
+            wait_for_broker(broker_process, test_port)
+            print("F-05 test broker is ready")
+
+            event_ids = []
+            payloads = []
+
+            #Save three acknowledged publishes before crashing the broker
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as publisher:
+                for number in range(1, 4):
+                    payload = {
+                        "kind": f"F-05 restart event {number}",
+                        "sev": 2,
+                        "source": "fault_inject",
+                    }
+                    payloads.append(payload)
+
+                    message = f"PUB|{topic}|{json.dumps(payload)}\n"
+                    publisher.sendall(message.encode("utf-8"))
+                    reply = read_reply(publisher)
+
+                    command, separator, event_id = reply.partition("|")
+
+                    if command != "PUB_ACK" or not separator or not event_id:
+                        raise RuntimeError(f"Expected PUB_ACK, received {reply}")
+
+                    event_ids.append(event_id)
+
+            saved_log = json.loads(event_log.read_text(encoding="utf-8"))
+            saved_events = saved_log.get(topic, [])
+
+            if len(saved_events) != 3 or len(set(event_ids)) != 3:
+                raise RuntimeError("Expected three unique saved events")
+
+            for event, event_id, payload in zip(
+                saved_events, event_ids, payloads
+            ):
+                if (
+                    event.get("event_id") != event_id
+                    or event.get("topic") != topic
+                    or event.get("payload") != payload
+                ):
+                    raise RuntimeError("Saved events differ from the publishes")
+
+            observed["saved_events"] = saved_events
+            print("Three events saved:", event_ids)
+
+            #Acknowledge only the first event before the broker crash
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as subscriber:
+                subscriber.sendall(
+                    f"SUB|{topic}|{subscriber_id}\n".encode("utf-8")
+                )
+
+                if read_reply(subscriber) != f"SUB_ACK|{topic}":
+                    raise RuntimeError("Initial subscription was not acknowledged")
+
+                first_event = receive_event(subscriber)
+
+                if first_event != saved_events[0]:
+                    raise RuntimeError("Initial replay returned the wrong event")
+
+                acknowledge_event(subscriber, first_event, 0)
+
+            observed["offset_before_crash"] = 0
+            log_before = event_log.read_bytes()
+            offsets_before = json.loads(
+                offsets_file.read_text(encoding="utf-8")
+            )
+            observed["offsets_before_crash"] = offsets_before
+            print("First event acknowledged; offset is 0")
+
+            #Kill the broker after events and offsets have been saved
+            broker_process.kill()
+            broker_process.join(timeout=5)
+
+            if broker_process.exitcode != -signal.SIGKILL:
+                raise RuntimeError("Broker did not exit through SIGKILL")
+
+            observed["crashed_broker_exit_code"] = broker_process.exitcode
+            print("Broker killed with SIGKILL")
+
+            #Restart using the same event log and offsets
+            broker_process = context.Process(
+                target=run_test_broker,
+                args=(
+                    src_dir,
+                    test_port,
+                    event_log,
+                    offsets_file,
+                    armed,
+                    checkpoint,
+                ),
+            )
+            broker_process.start()
+            wait_for_broker(broker_process, test_port)
+
+            if event_log.read_bytes() != log_before:
+                raise RuntimeError("Saved event log changed across restart")
+
+            offsets_after = json.loads(
+                offsets_file.read_text(encoding="utf-8")
+            )
+            observed["offsets_after_restart"] = offsets_after
+
+            if offsets_after != offsets_before:
+                raise RuntimeError("Saved offsets changed across restart")
+
+            print("Broker restarted with saved events and offsets")
+
+            #Reconnect with the same ID and read only the two pending events
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as subscriber:
+                subscriber.sendall(
+                    f"SUB|{topic}|{subscriber_id}\n".encode("utf-8")
+                )
+
+                if read_reply(subscriber) != f"SUB_ACK|{topic}":
+                    raise RuntimeError("Reconnect was not acknowledged")
+
+                replayed_events = [
+                    receive_event(subscriber),
+                    receive_event(subscriber),
+                ]
+                observed["replayed_events"] = replayed_events
+
+                if replayed_events != saved_events[1:]:
+                    raise RuntimeError("Replay did not match the pending events")
+
+                acknowledge_event(subscriber, replayed_events[0], 1)
+                acknowledge_event(subscriber, replayed_events[1], 2)
+
+                #Check that the acknowledged first event was not replayed again
+                subscriber.settimeout(0.3)
+
+                try:
+                    extra = subscriber.recv(1)
+                except socket.timeout:
+                    pass
+                else:
+                    if extra:
+                        raise RuntimeError("Unexpected extra replay data")
+                    raise RuntimeError("Broker closed the subscriber connection")
+
+            observed["offset_after_replay_ack"] = 2
+            observed["event_log_preserved"] = True
+            observed["saved_offsets_preserved"] = True
+            observed["replay_matches_pending_events"] = True
+
+            print("Only the two pending events replayed in order")
+            print("Replay ACKs advanced the offset to 2")
+
+        finally:
+            #Stop the test broker before removing temporary data
+            stop_test_process(broker_process)
+            observed["broker_stopped"] = True
+            print("F-05 test broker stopped")
+
 def main():
     #reads the selected fault case and displays it
     cases = {
@@ -1106,6 +1338,7 @@ def main():
         "F-02": run_f02,
         "F-03": run_f03,
         "F-04": run_f04,
+        "F-05": run_f05,
     }
 
 
@@ -1129,6 +1362,11 @@ def main():
             "Two concurrent publishers each send 10 events to the same topic. "
             "All 20 events arrive intact, with unique acknowledged IDs, "
             "and subscriber delivery order matches the committed log."
+        ),
+        "F-05": (
+            "Saved events and subscriber offsets survive a broker crash. "
+            "After restart, the same subscriber ID receives only its two "
+            "unacknowledged events in log order."
         ),
     }
 
