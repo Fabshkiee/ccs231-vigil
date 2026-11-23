@@ -77,7 +77,7 @@ class TestRoundTrip(unittest.TestCase):
 
     def test_err(self):
         r = p.parse_err(p.format_err(ErrorCode.BAD_REQUEST, "empty_topic"))
-        self.assertEqual(r, p.Ok("ERR", {"code": ErrorCode.BAD_REQUEST.value, "message": "empty_topic"})) #P-01 FIX: was only code + message; now also the command name
+        self.assertEqual(r, p.Ok("ERR", {"code": ErrorCode.BAD_REQUEST, "message": "empty_topic"})) #P-01 FIX: was only code + message; now also the command name
 
     def test_dispatcher_matches_direct_parser(self):
         line = p.format_sub("sighting", "team")
