@@ -95,7 +95,26 @@ class TestAtomicWrite(BaseStorageTest):
 
 		self.assertLess(calls.index("fsync"), calls.index("replace"))	# did fsync happen before replace?
 		self.assertEqual(self._read_file(), dummy_data)
-		
+
+	def test_aw_ignores_directory_sync_failure(self):
+		data = {"status": "ok"}
+
+		# simulate running atomic write in a Unix OS
+		with patch("os.name", "posix"), \
+			patch("common.storage.os.open", return_value=99), \
+			patch(
+				"common.storage.os.fsync", 
+				side_effect=[None, OSError("directory sync failed")]
+				) as mock_fsync, \
+			patch("common.storage.os.close") as mock_close:
+
+			atomic_write(self.file_path, data)
+
+		self.assertEqual(mock_fsync.call_count, 2)
+		mock_close.assert_called_once_with(99)
+		self.assertEqual(self._read_file(), data)
+		self._assert_no_tmp_files()
+
 class TestLoadEvents(BaseStorageTest):
 	def test_load_missing_events_file(self):
 		# case: program runs the first time, data/ and its files won't exist yet
