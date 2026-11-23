@@ -76,6 +76,26 @@ class TestAtomicWrite(BaseStorageTest):
 		self.assertEqual(self._read_file(), init_data)
 		self._assert_no_tmp_files()
 
+	def test_aw_syncs_temp_file_before_replace(self):
+		calls = []
+		real_replace = os.replace # save the real function before mocking
+
+		# record the key operations once atomic_write calls them
+		def record_fsync(_fd):
+			calls.append("fsync")
+
+		def record_replace(src, dst):
+			calls.append("replace")
+			real_replace(src, dst)
+
+		dummy_data = {"status": "ok"}
+		with patch("common.storage.os.fsync", side_effect=record_fsync), \
+			patch("common.storage.os.replace", side_effect=record_replace):
+				atomic_write(self.file_path, dummy_data)
+
+		self.assertLess(calls.index("fsync"), calls.index("replace"))	# did fsync happen before replace?
+		self.assertEqual(self._read_file(), dummy_data)
+		
 class TestLoadEvents(BaseStorageTest):
 	def test_load_missing_events_file(self):
 		# case: program runs the first time, data/ and its files won't exist yet
