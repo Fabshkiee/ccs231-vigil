@@ -212,3 +212,55 @@ class TestSaveOffset(BaseStorageTest):
 		# failed save means delete .tmp, it is expected to have no lingering tmp files
 		self._assert_no_tmp_files() 
 
+class TestStorage(BaseStorageTest):
+	def test_save_and_load_events(self):
+		# initialize three new events
+		new_events: list[dict] = [
+			{
+				"event_id": "48b65d75e51b4f3c9ede73d6522cd7a2",
+				"topic": "readings",
+				"payload": {
+					"kind": "ambient reading",
+					"zone": "zone-a",
+					"level": 16,
+					"source": "ParanormalReadings"
+				},
+				"created_at": 1795416533.802806
+			},
+			{
+				"event_id": "1702e6ca6db747b5af72cd419ea44ba8",
+				"topic": "readings",
+				"payload": {
+					"kind": "ambient reading",
+					"zone": "zone-b",
+					"level": 99,
+					"source": "ParanormalReadings"
+				},
+				"created_at": 1795416536.8138928
+			},
+			{
+				"event_id": "6bfd48fe472742eca3116083391f1981",
+				"topic": "readings",
+				"payload": {
+					"kind": "ambient reading",
+					"zone": "zone-b",
+					"level": 96,
+					"source": "ParanormalReadings"
+				},
+				"created_at": 1795416539.8317566
+			}
+		]
+
+		# save three new events
+		for event in new_events:
+			append_event(event, self.file_path)
+
+		# load event file
+		loaded_events = load_events(self.file_path)
+		readings = loaded_events.get('readings')
+		sighting = loaded_events.get('sighting') # non-existent topic
+
+		# match if loaded events is the same as the events appended
+		self.assertEqual(readings, new_events)
+		self.assertEqual(sighting, None)
+
