@@ -426,6 +426,50 @@ def stop_test_process(process):
         raise RuntimeError("Test process did not stop")
 
 
+    
+def read_offset(offsets_file, subscriber_id, topic):
+    #This reads the subscriber's last acknowledged position for a topic
+    if not offsets_file.exists():
+        return -1
+
+    offsets = json.loads(offsets_file.read_text(encoding="utf-8"))
+    return offsets.get(subscriber_id, {}).get(topic, -1)
+
+def run_f02_subscriber(src_dir, test_port, ack_checkpoint):
+    #This starts a subscriber and pauses it before sending its first ACK
+    sys.path.insert(0, str(src_dir))
+
+    import common.constants as constants
+
+    constants.PORT = test_port
+
+    import subscriber
+
+    original_send = subscriber.BrokerLink.send
+
+    def pause_before_ack(connection, line):
+        #This signals that the subscriber reached an ACK without sending it
+        if line.startswith("ACK|"):
+            ack_checkpoint.set()
+
+            #The parent must kill this subscriber before the timeout expires
+            time.sleep(15)
+            os._exit(90)
+
+        original_send(connection, line)
+
+    subscriber.BrokerLink.send = pause_before_ack
+    subscriber.main(["--as", "ResponseTeam"])
+
+
+
+
+
+
+
+
+
+
 def run_f02(observed):
     #This checks that an event replays after its subscriber dies before ACK
     src_dir = Path(__file__).resolve().parents[1]
