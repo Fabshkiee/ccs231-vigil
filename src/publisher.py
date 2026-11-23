@@ -120,7 +120,7 @@ class BrokerLink:
 
 def connect(host, port, timeout):
     """open TCP connection; timeout applies to later send/recv"""
-    return BrokerLink(socket.create_connection(host, port), timeout=timeout)
+    return BrokerLink(socket.create_connection((host, port), timeout=timeout))
 
 def short_id(event_id):
     """First few chars of uuid for readable demo"""
