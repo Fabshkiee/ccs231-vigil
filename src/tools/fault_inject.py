@@ -372,6 +372,34 @@ def run_f01(observed):
             observed["broker_stopped"] = True
 
             print("Test broker stopped")
+
+def _run_f02_subscriber(src_dir, test_port, ack_checkpoint):
+    #This starts a subscriber and pauses it before sending its first ACK
+    sys.path.insert(0, str(src_dir))
+
+    import common.constants as constants
+
+    constants.PORT = test_port
+
+    import subscriber
+
+    original_send = subscriber.BrokerLink.send
+
+    def pause_before_ack(connection, line):
+        #This signals that the subscriber reached an ACK without sending it
+        if line.startswith("ACK|"):
+            ack_checkpoint.set()
+
+            #The parent must kill this subscriber before the timeout expires
+            time.sleep(15)
+            os._exit(90)
+
+        original_send(connection, line)
+
+    subscriber.BrokerLink.send = pause_before_ack
+    subscriber.main(["--as", "ResponseTeam"])
+
+
 def main():
     #reads the selected fault case and displays it
     cases = {
