@@ -4,7 +4,7 @@
 # allowed to route by topic.
 import argparse, random, socket, sys, time, re
 
-from common.constants import SEV_MIN, SEV_MAX, ALERT_MIN_SEV
+from common.constants import SEV_MIN, SEV_MAX, ALERT_MIN_SEV, PORT
 from common.log import warn, info
 from common.protocol import Err, format_pub, parse_line, split_lines
 
@@ -25,7 +25,6 @@ ROLES = {
 
 SEV_WORD = "severity"
 AUTO_ROLE = "ParanormalReadings"
-SEV_WORD = "severity"
 RECV_BYTES = 4096
 SHORT_ID_LEN = 8
 ALERT_TOPIC = "alert"
@@ -120,7 +119,7 @@ class BrokerLink:
 
 def connect(host, port, timeout):
     """open TCP connection; timeout applies to later send/recv"""
-    return BrokerLink(socket.create_connection(host, port), timeout=timeout)
+    return BrokerLink(socket.create_connection((host, port), timeout=timeout))
 
 def short_id(event_id):
     """First few chars of uuid for readable demo"""
@@ -198,11 +197,11 @@ def run_auto(link, role, interval):
         try:
             # build one reading dictionary, sends json over the socket,
             # blocks for PUB_ACK, and prints line confirmation
-            publish_and_print(link, make_reading(rng, role))
+            publish_and_print(link, topic, make_reading(rng, role))
         except BrokerRejected as exc:
             warn("pub", "broker_rejected", str(exc))
             # pause loop to follow interval
-            time.sleep(interval)
+        time.sleep(interval)
 
 def run_typed(link, role):
     """SightingReports / PoltergeistActivity mode, one typed line, one event."""
@@ -222,17 +221,17 @@ def main(argv=None):
     role = args.role
     try:
         # open tcp connection to the broker
-        link = connect(args.host, PORT, PUB_ACK_TIMEOUT_S)
+        link = connect(HOST, PORT, PUB_ACK_TIMEOUT_S)
     except OSError as exc:
         # if broker isn't running/unreachable
-        warn("pub", "cannot_connect", f"{args.host}:{PORT} {exc}")
+        warn("pub", "cannot_connect", f"{HOST}:{PORT} {exc}")
         return 1
     # confirm connection
-    info("pub", f"{role} connected to {args.host}:{PORT}")
+    info("pub", f"{role} connected to {HOST}:{PORT}")
     try:
         # route execution based on role
         if role == AUTO_ROLE:
-            run_auto(link, role, args.interval)
+            run_auto(link, role, READINGS_INTERVAL_S)
         else:
             run_typed(link, role)
     except LinkError as exc:
