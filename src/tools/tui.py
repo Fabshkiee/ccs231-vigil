@@ -359,6 +359,8 @@ def pub_status(child):
 
 def publisher_sent(child, state):
     rows = []
+    if child is None:
+        return [[IND, (ASH, "○ waiting for events")]]
     for text in child.lines:
         m = re.match(r"Event (\w{8}) saved \((\w+)\)", text)
         if not m:
