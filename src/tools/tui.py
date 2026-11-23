@@ -340,6 +340,37 @@ def sub_status(child):
     return [(BRASS, "● "), (BONE, "starting")]
 
 
+def pub_status(child):
+    if child is None:
+        return [(ASH, "○ preview")]
+    if not child.alive():
+        return [(BLOOD, "○ stopped"), (ASH, " · Enter restarts")]
+    for text in reversed(list(child.lines)):
+        if "[pub]" not in text:
+            continue
+        if "warn:" in text:
+            return [(ASH, "◌ retrying")]
+        if "streaming to" in text:
+            return [(BRASS, "● "), (BONE, "publishing")]
+        if "connected to" in text:
+            return [(BRASS, "● "), (BONE, "ready")]
+    return [(BRASS, "● "), (BONE, "starting")]
+
+
+def publisher_sent(child, state):
+    rows = []
+    for text in child.lines:
+        m = re.match(r"Event (\w{8}) saved \((\w+)\)", text)
+        if not m:
+            continue
+        ident, topic = m.groups()
+        ev = next((e for e in state.events if e["event_id"].startswith(ident)), None)
+        when = hhmmss(ev["created_at"]) if ev else "--:--:--"
+        desc = client_model.describe(ev["payload"]) if ev else topic
+        rows.append([IND, (ASH, when), (None, "  "), (BRASS, ident), (None, "  "), (BONE, desc)])
+    return rows[-2:] if rows else [[IND, (ASH, "○ waiting for events")]]
+
+
 def stats_rows(subs, up, events, alerts):
     # The broker logs no SUBSCRIBE, so a live count would need graded-code changes.
     # "acked" is a past-tense fact that survives a killed subscriber's pane.
