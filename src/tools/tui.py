@@ -53,8 +53,8 @@ ACCENT = {
     "ResearchArchive": SLATE,
     "broker": EMBER,
 }
-TITLES = {"broker": ["VIGIL"]}
-COMPACT = {"broker": "VIGIL"}
+TITLES = {"broker": ["VIGIL"], "ResponseTeam": ["RESPONSE"]}
+COMPACT = {"broker": "VIGIL", "ResponseTeam": "RESPONSE"}
 
 GLYPHS = {
     "A": (" █████╗ ", "██╔══██╗", "███████║", "██╔══██║", "██║  ██║", "╚═╝  ╚═╝"),
@@ -396,19 +396,39 @@ def build_broker(state, now, width, big, status, err, up):
     return [[]] + join3(pad(left), pad(mid), pad(right), lw, mw, gap)
 
 
-def lines_for(state, child, now, width, height):
+def build_subscriber(role, state, now, width, big, status, received, queued):
+    topics = client_model.SUBSCRIBERS[role]
+    labels = ", ".join(topic.upper() for topic in topics)
+    rows = [[]] + title_block(role, width, big)
+    rows.append(split([IND, (ACCENT[role] + BOLD, f"{role} · subscriber")], status, width))
+    rows.append([IND, (ASH, f"subscribes: {labels}"),
+                 (BONE, f" · received {received} · queued {queued}")])
+    rows.append([IND, (ASH, "─" * (width - 3))])
+    rows += bus_feed_rows(state.events, now, 5, topics)
+    return rows
+
+
+def lines_for(state, child, now, width, height, role="broker"):
     if width < 120 or height < 10:
         return [
             "",
-            f"  VIGIL — broker needs a wider window ({width}×{height})",
+            f"  VIGIL — {role} needs a wider window ({width}×{height})",
             "  resize to at least 150×12; 231×13 is the target",
         ]
-    status, err = status_spans(child)
+    err = ""
     up = None
-    if child is not None and child.spawn_time:
-        up = (child.stopped_at or now) - child.spawn_time
+    if role == "broker":
+        status, err = status_spans(child)
+        if child is not None and child.spawn_time:
+            up = (child.stopped_at or now) - child.spawn_time
+    else:
+        status = sub_status(child)
+        received, queued = state.subscriber_counts(role)
     for big in (True, False):
-        rows = build_broker(state, now, width, big, status, err, up)
+        if role == "broker":
+            rows = build_broker(state, now, width, big, status, err, up)
+        else:
+            rows = build_subscriber(role, state, now, width, big, status, received, queued)
         if len(rows) <= height - 1:
             break
     return [paint(row, width - 1) for row in rows][:height - 1]
