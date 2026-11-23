@@ -198,6 +198,13 @@ class BrokerState:
         return len(self.events) - self.alerts
 
 
+def command_for(role):
+    cmd = [sys.executable, "-u", str(SRC / ("broker.py" if role == "broker" else "subscriber.py"))]
+    if role != "broker":
+        cmd += ["--as", role]
+    return cmd
+
+
 class Child:
     def __init__(self):
         self.proc = None
@@ -206,11 +213,10 @@ class Child:
         self.stopped_at = None
         self._reader = None
 
-    def start(self):
+    def start(self, cmd):
         self.lines.clear()
         self.stopped_at = None
         self.spawn_time = time.time()
-        cmd = [sys.executable, "-u", str(SRC / "broker.py")]
         self.proc = subprocess.Popen(
             cmd,
             cwd=str(ROOT),
@@ -494,7 +500,7 @@ def main(argv=None):
     term.raw_mode()
     enter_screen("VIGIL — Broker")
     child = Child()
-    child.start()
+    child.start(command_for(args.role))
     try:
         while True:
             try:
@@ -508,7 +514,7 @@ def main(argv=None):
             draw(state, child)
             if not restart_prompt(term):
                 break
-            child.start()
+            child.start(command_for(args.role))
     finally:
         child.stop()
         term.line_mode()
