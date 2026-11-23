@@ -64,6 +64,59 @@ Ran 9 tests in 0.000s
 
 9 of 9 tests PASSED.
 
+
+### P-1 (PROTOCOL TEST 1) Supported Messages Round Trip Retest
+
+**Expected:**
+
+Parsing a formatted message preserves its command name and all field values.
+
+**Input messages / values:**
+
+- SUB: topic `sighting`, subscriber ID `responseteam`.
+- SUB_ACK: topic `alert`.
+- PUB_ACK: event ID `e-8`.
+- GET_STATS: topic `alert`.
+- PUB: topic `sighting`, payload `{"note":"a|b","sev":5}`.
+- EVENT: event ID `x`, topic `alert`, payload `{}`, created_at `1.0`.
+- ACK: topic `sighting`, subscriber ID `responseteam`, event ID `e-8`.
+- ERR: code `400`, message `empty_topic`.
+- Dispatcher: SUB with topic `sighting`, subscriber ID `team`.
+
+**Command to test used:**
+
+```bash
+python3 tests/test_protocol.py TestRoundTrip -v
+```
+
+**Observed results:**
+
+All nine tests returned `ok`. The updated assertions confirmed the command names and complete returned fields. The dispatcher comparison also passed.
+
+**Evidence / log reference:**
+
+```text
+test_ack (__main__.TestRoundTrip.test_ack) ... ok
+test_dispatcher_matches_direct_parser (__main__.TestRoundTrip.test_dispatcher_matches_direct_parser) ... ok
+test_err (__main__.TestRoundTrip.test_err) ... ok
+test_event (__main__.TestRoundTrip.test_event) ... ok
+test_get_stats (__main__.TestRoundTrip.test_get_stats) ... ok
+test_pub_ack (__main__.TestRoundTrip.test_pub_ack) ... ok
+test_pub_pipe_in_payload (__main__.TestRoundTrip.test_pub_pipe_in_payload)... ok
+test_sub (__main__.TestRoundTrip.test_sub) ... ok
+test_sub_ack (__main__.TestRoundTrip.test_sub_ack) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.000s
+
+OK
+```
+
+**Verdict:**
+
+**PASSED 9/9.** The previously identified command-name and field-assertion coverage gap is resolved for the tested inputs.
+
+
 ### P-2 (PROTOCOL TEST 2) INVALID FIELD COUNTS
 
 **Expected:**
@@ -103,9 +156,123 @@ OK
 
 Partially Passed. Extra field cases and field count checks have not yet been tested.
 
+
+
+### P-2 (PROTOCOL TEST 2) Invalid Field Counts Retest
+
+**Expected:**
+
+Messages with missing fields or forbidden extra fields return `Err` with reason `bad_field_count` and `close=False`. Invalid JSON containing an additional pipe in PUB or EVENT returns `bad_json`.
+
+**Input messages / values:**
+
+Missing-field and extra-field inputs:
+
+- SUB: `SUB`, `SUB|a`, `SUB|a|b|c`.
+- SUB_ACK: `SUB_ACK`, `SUB_ACK|a|b`.
+- PUB_ACK: `PUB_ACK`, `PUB_ACK|a|b`.
+- GET_STATS: `GET_STATS`, `GET_STATS|a|b`.
+- ACK: `ACK`, `ACK|a`, `ACK|a|b`, `ACK|a|b|c|d`.
+- PUB: `PUB`.
+- EVENT: `EVENT`.
+- ERR: `ERR`, `ERR|400`.
+
+Invalid JSON inputs containing an additional pipe:
+
+- `PUB|sighting|{}|x`
+- `EVENT|{}|x`
+
+**Command to test used:**
+
+```bash
+python3 tests/test_protocol.py TestRejects.test_missing_and_extra_fields TestRejects.test_extra_pipe_in_pub_and_event_is_payload -v
+```
+
+**Observed results:**
+
+Both test methods returned `ok`. Their passing assertions confirmed that all 17 field-count inputs returned `Err` with reason `bad_field_count` and `close=False`.
+
+The two invalid JSON inputs returned `Err` with reason `bad_json` and `close=False`. No uncaught exception occurred.
+
+**Evidence / log reference:**
+
+```text
+test_missing_and_extra_fields (__main__.TestRejects.test_missing_and_extra_fields) ... ok
+test_extra_pipe_in_pub_and_event_is_payload (__main__.TestRejects.test_extra_pipe_in_pub_and_event_is_payload) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+```
+
+**Verdict:**
+
+**PASSED 2/2 test methods.** All 19 input cases passed their assertions. The previously identified field-count coverage gap is resolved for the tested inputs.
+
+
+
+
+
 ### P-3 (PROTOCOL TEST 3) Empty Topic
 
-(NO FILE YET- TEST)
+**Expected:**
+
+Empty and whitespace-only topics are rejected with `Err`, reason `empty_topic`, and `close=False`.
+
+**Input messages / values:**
+
+Each command was tested with an empty topic, spaces-only topic, and tab-only topic:
+
+```text
+SUB||team
+SUB|   |team
+SUB|\t|team
+
+SUB_ACK|
+SUB_ACK|   
+SUB_ACK|\t
+
+PUB||{}
+PUB|   |{}
+PUB|\t|{}
+
+ACK||s|e
+ACK|   |s|e
+ACK|\t|s|e
+
+GET_STATS|
+GET_STATS|   
+GET_STATS|\t
+```
+
+`\t` represents an actual tab character in the test inputs.
+
+**Command to test used:**
+
+```bash
+python3 tests/test_protocol.py TestRejects.test_empty_and_whitespace_topic -v
+```
+
+**Observed results:**
+
+The test method returned `ok`. Its passing assertions confirmed that all 15 inputs returned `Err` with reason `empty_topic` and `close=False`. No uncaught exception occurred.
+
+**Evidence / log reference:**
+
+```text
+test_empty_and_whitespace_topic (__main__.TestRejects.test_empty_and_whitespace_topic) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+```
+
+**Verdict:**
+
+**PASSED 1/1 test method.** All 15 input cases passed their assertions. The previously identified empty-topic coverage gap is resolved for the tested inputs.
+
 
 ### P-4 (PROTOCOL TEST 4) INVALID PUB PAYLOAD
 
@@ -226,6 +393,48 @@ OK
 **Verdict:**
 
 PASS for the four existing buffering checks. Overall P-07 remains incomplete pending broker integration and remaining coverage.
+
+
+### P-6 (PROTOCOL TEST 6) Line Framing and Message Size Limit Retest
+
+**Expected:**
+
+When one chunk contains a complete line followed by an unfinished line, the complete line is returned and the unfinished portion stays buffered. The next chunk completes the buffered message without losing data.
+
+**Input messages / values:**
+
+- Initial buffer: `b""`.
+- First chunk: `b"SUB|a|b\nPUB|sig"`.
+- Second chunk: `b"hting|{}\n"`.
+
+**Command to test used:**
+
+```bash
+python3 tests/test_protocol.py TestBuffering.test_complete_line_then_unfinished_line_in_one_chunk -v
+```
+
+**Observed results:**
+
+The test returned `ok`. Its passing assertions confirmed:
+
+- After the first chunk, the returned lines were `[b"SUB|a|b"]`, the remainder was `b"PUB|sig"`, and the error was `None`.
+- After the second chunk, the returned lines were `[b"PUB|sighting|{}"]`, the remainder was `b""`, and the error was `None`.
+
+**Evidence / log reference:**
+
+```text
+test_complete_line_then_unfinished_line_in_one_chunk (__main__.TestBuffering.test_complete_line_then_unfinished_line_in_one_chunk) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+```
+
+**Verdict:**
+
+**PASSED 1/1.** The complete-line-plus-unfinished-remainder coverage gap is resolved. Actual connection behavior remains pending broker integration.
+
 
 ### Protocol Stage Record
 
