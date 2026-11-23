@@ -846,12 +846,266 @@ def run_f03(observed):
             print("F-03 test processes stopped")
 
 
+            
+def publish_f04_events(test_port, publisher_name, start_barrier):
+    #Publish identifiable events after both publishers are connected
+    accepted_events = []
+
+    with socket.create_connection(
+        ("127.0.0.1", test_port), timeout=5
+    ) as publisher:
+        start_barrier.wait(timeout=5)
+
+        for number in range(10):
+            payload = {
+                "kind": f"F-04 {publisher_name} event {number}",
+                "sev": 2,
+                "source": publisher_name,
+                "note": "a|b " * 100,
+            }
+
+            message = f"PUB|sighting|{json.dumps(payload)}\n"
+            publisher.sendall(message.encode("utf-8"))
+            reply = read_reply(publisher)
+
+            command, separator, event_id = reply.partition("|")
+
+            if command != "PUB_ACK" or not separator or not event_id:
+                raise RuntimeError(f"Expected PUB_ACK, received {reply}")
+
+            accepted_events.append({
+                "event_id": event_id,
+                "payload": payload,
+            })
+
+    return accepted_events
+
+
+def run_f04(observed):
+    #Check concurrent publishes against the saved event order
+    src_dir = Path(__file__).resolve().parents[1]
+    topic = "sighting"
+    subscriber_id = "f04-check"
+
+    with tempfile.TemporaryDirectory(prefix="vigil-f04-") as test_dir:
+        data_dir = Path(test_dir) / "data"
+        data_dir.mkdir()
+
+        event_log = data_dir / "event_log.json"
+        offsets_file = data_dir / "offsets.json"
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_socket:
+            test_socket.bind(("127.0.0.1", 0))
+            test_port = test_socket.getsockname()[1]
+
+        context = multiprocessing.get_context("spawn")
+        armed = context.Event()
+        checkpoint = context.Event()
+
+        broker_process = context.Process(
+            target=run_test_broker,
+            args=(
+                src_dir,
+                test_port,
+                event_log,
+                offsets_file,
+                armed,
+                checkpoint,
+            ),
+        )
+
+        observed["test_port"] = test_port
+        observed["events_per_publisher"] = 10
+
+        try:
+            broker_process.start()
+            wait_for_broker(broker_process, test_port)
+            print("F-04 test broker is ready")
+
+            #Save a warmup event to confirm the subscriber becomes ready
+            warmup_payload = {
+                "kind": "F-04 warmup",
+                "sev": 2,
+                "source": "fault_inject",
+            }
+
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as publisher:
+                message = f"PUB|{topic}|{json.dumps(warmup_payload)}\n"
+                publisher.sendall(message.encode("utf-8"))
+                reply = read_reply(publisher)
+
+            command, separator, warmup_id = reply.partition("|")
+
+            if command != "PUB_ACK" or not separator or not warmup_id:
+                raise RuntimeError(f"Expected warmup PUB_ACK, received {reply}")
+
+            observed["warmup_event_id"] = warmup_id
+
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as subscriber:
+                message = f"SUB|{topic}|{subscriber_id}\n"
+                subscriber.sendall(message.encode("utf-8"))
+
+                reply = read_reply(subscriber)
+
+                if reply != f"SUB_ACK|{topic}":
+                    raise RuntimeError(f"Unexpected subscription reply: {reply}")
+
+                reply = read_reply(subscriber)
+                command, separator, event_json = reply.partition("|")
+
+                if command != "EVENT" or not separator:
+                    raise RuntimeError("Expected the warmup event")
+
+                warmup_event = json.loads(event_json)
+
+                if (
+                    warmup_event.get("event_id") != warmup_id
+                    or warmup_event.get("topic") != topic
+                    or warmup_event.get("payload") != warmup_payload
+                ):
+                    raise RuntimeError("Warmup event does not match the publish")
+
+                #Wait for the warmup ACK to confirm subscription processing finished
+                message = f"ACK|{topic}|{subscriber_id}|{warmup_id}\n"
+                subscriber.sendall(message.encode("utf-8"))
+
+                deadline = time.monotonic() + 5
+
+                while read_offset(offsets_file, subscriber_id, topic) != 0:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("Warmup ACK was not saved")
+                    time.sleep(0.05)
+
+                print("F-04 subscriber is ready")
+
+                #Start both publishers and receive their events concurrently
+                start_barrier = threading.Barrier(3)
+                received_events = []
+
+                with ThreadPoolExecutor(max_workers=2) as workers:
+                    first = workers.submit(
+                        publish_f04_events,
+                        test_port,
+                        "publisher-a",
+                        start_barrier,
+                    )
+                    second = workers.submit(
+                        publish_f04_events,
+                        test_port,
+                        "publisher-b",
+                        start_barrier,
+                    )
+
+                    start_barrier.wait(timeout=5)
+
+                    for number in range(20):
+                        reply = read_reply(subscriber)
+                        command, separator, event_json = reply.partition("|")
+
+                        if command != "EVENT" or not separator:
+                            raise RuntimeError(
+                                f"Expected EVENT {number + 1}, received {reply}"
+                            )
+
+                        event = json.loads(event_json)
+
+                        if not isinstance(event, dict):
+                            raise RuntimeError("Received event is not an object")
+
+                        received_events.append(event)
+
+                    first_events = first.result(timeout=5)
+                    second_events = second.result(timeout=5)
+
+                #Check for unexpected additional data after both publishers finish
+                subscriber.settimeout(0.3)
+
+                try:
+                    extra = subscriber.recv(1)
+                except socket.timeout:
+                    pass
+                else:
+                    if extra:
+                        raise RuntimeError("Unexpected extra event data")
+                    raise RuntimeError("Broker closed the subscriber connection")
+
+            observed["publisher_a_event_ids"] = [
+                event["event_id"] for event in first_events
+            ]
+            observed["publisher_b_event_ids"] = [
+                event["event_id"] for event in second_events
+            ]
+            observed["received_event_ids"] = [
+                event.get("event_id") for event in received_events
+            ]
+
+            #Compare the complete received events with their committed log entries
+            saved_log = json.loads(event_log.read_text(encoding="utf-8"))
+            stored_events = saved_log.get(topic, [])
+
+            if len(stored_events) != 21:
+                raise RuntimeError("Expected one warmup and 20 concurrent events")
+
+            if stored_events[0] != warmup_event:
+                raise RuntimeError("Warmup event changed in the log")
+
+            concurrent_events = stored_events[1:]
+            observed["stored_event_ids"] = [
+                event.get("event_id") for event in concurrent_events
+            ]
+
+            if received_events != concurrent_events:
+                raise RuntimeError("Subscriber events differ from the saved log order")
+
+            accepted_events = first_events + second_events
+            accepted_by_id = {
+                event["event_id"]: event["payload"]
+                for event in accepted_events
+            }
+
+            if len(accepted_by_id) != 20:
+                raise RuntimeError("Expected 20 unique acknowledged event IDs")
+
+            for event in concurrent_events:
+                event_id = event.get("event_id")
+
+                if event_id not in accepted_by_id:
+                    raise RuntimeError("Log contains an unrecognized event ID")
+
+                if (
+                    event.get("topic") != topic
+                    or event.get("payload") != accepted_by_id[event_id]
+                ):
+                    raise RuntimeError("Stored event differs from its published payload")
+
+            observed["received_count"] = len(received_events)
+            observed["stored_concurrent_count"] = len(concurrent_events)
+            observed["delivery_matches_log_order"] = True
+            observed["all_payloads_preserved"] = True
+
+            print("Both publishers completed 10 events")
+            print("All 20 events received and stored")
+            print("Delivery order matches the saved log")
+            print("All payloads preserved")
+
+        finally:
+            #Stop the owned broker on success or failure
+            stop_test_process(broker_process)
+            observed["broker_stopped"] = True
+            print("F-04 test broker stopped")
+
+
 def main():
     #reads the selected fault case and displays it
     cases = {
         "F-01": run_f01,
         "F-02": run_f02,
         "F-03": run_f03,
+        "F-04": run_f04,
     }
 
 
@@ -866,10 +1120,15 @@ def main():
             "when the same subscriber ID reconnects. Its offset advances "
             "only after the replay is acknowledged."
         ),
-                "F-03": (
+        "F-03": (
             "A suppressed ACK leaves the offset unchanged. The same subscriber "
             "process reconnects, receives the event again, prints it once, "
             "and acknowledges the replay so the offset advances."
+        ),
+        "F-04": (
+            "Two concurrent publishers each send 10 events to the same topic. "
+            "All 20 events arrive intact, with unique acknowledged IDs, "
+            "and subscriber delivery order matches the committed log."
         ),
     }
 
