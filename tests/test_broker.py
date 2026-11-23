@@ -337,5 +337,28 @@ class TestBrokerConnection(ut.TestCase):
 		self.assertIn(b"422", client.sendall.call_args[0][0])
 		self.assertNotIn("sub_ack_3", broker.storage.load_offsets())
 
+	def test_failed_save_returns_503_without_fanout_or_pub_ack(self):
+		topic = "sightings"
+		# mock some clients
+		publisher = MagicMock()
+		subscriber = MagicMock()
+
+		with broker.sub_lock:
+			broker.subscriptions[topic] = [(subscriber, "sub_live")]
+
+		# simulate a disk error
+		with patch(
+			"broker.storage.append_event",
+			side_effect=OSError("Disk full"),
+		) as append_event, patch("broker._send_line") as send_line:
+			broker._handle_pub(publisher, topic, self._get_test_pub_payload())
+
+		# Verify that no fan out or pub_ack was sent after error 503
+		append_event.assert_called_once()
+		send_line.assert_called_once_with(
+			publisher,
+			prot.format_err(prot.ErrorCode.SERVICE_UNAVAILABLE, "store failure"),
+		)
+
 if __name__ == "__main__":
 	ut.main()
