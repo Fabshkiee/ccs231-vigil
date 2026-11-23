@@ -119,16 +119,7 @@ def read_reply(connection):
 
 
 def run_f01(observed):
-    #This reads the selected fault case and displays it
-    parser = argparse.ArgumentParser(description="VIGIL QA Tests")
-    parser.add_argument("--case", required=True, choices=["F-01"])
 
-
-   
-
-   
-    args = parser.parse_args()
-    print("Selected case:", args.case)
 
     src_dir = Path(__file__).resolve().parents[1]
     print("Source folder:", src_dir)
@@ -381,15 +372,27 @@ def run_f01(observed):
             observed["broker_stopped"] = True
 
             print("Test broker stopped")
-
 def main():
-    #This records the test result after the checks and cleanup finish
+    #reads the selected fault case and displays it
+    cases = {
+        "F-01": run_f01,
+    }
+
+    parser = argparse.ArgumentParser(description="VIGIL QA Tests")
+    parser.add_argument("--case", required=True, choices=cases)
+
+    args = parser.parse_args()
+    print("Selected case:", args.case)
+
+    #records the test result after the checks and cleanup finish
+  
+  
     observed = {}
     verdict = "FAIL"
     error = None
 
     try:
-        run_f01(observed)
+        cases[args.case](observed)
         verdict = "PASS"
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
@@ -399,15 +402,15 @@ def main():
         print(error)
 
     result = {
-        "case": "F-01",
+        "case": args.case,
         "date": datetime.now().astimezone().isoformat(),
-        "command": "python3 src/tools/fault_inject.py --case F-01",
+        "command": f"python3 src/tools/fault_inject.py --case {args.case}",
         "verdict": verdict,
         "observed": observed,
         "error": error,
     }
 
-    #This appends the result to the project's fault test report
+    #aaaappends the result to the project's fault test report
     report_path = (
         Path(__file__).resolve().parents[2]
         / "docs"
@@ -416,7 +419,7 @@ def main():
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     with report_path.open("a", encoding="utf-8") as report:
-        report.write("\n### F-01 Automated Run\n\n")
+        report.write(f"\n### {args.case} Automated Run\n\n")
         report.write(f"**Date:** {result['date']}\n\n")
         report.write(f"**Verdict:** {verdict}\n\n")
         report.write(
@@ -429,7 +432,7 @@ def main():
         report.write(json.dumps(result, indent=2))
         report.write("\n```\n")
 
-    print("F-01 result:", verdict)
+    print(args.case, "result:", verdict)
     print("Report updated:", report_path)
 
     return 0 if verdict == "PASS" else 1
@@ -437,5 +440,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
