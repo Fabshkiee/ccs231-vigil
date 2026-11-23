@@ -599,10 +599,31 @@ def restart_prompt(term):
         term.raw_mode()
 
 
+def publisher_prompt(term, child, role):
+    height = shutil.get_terminal_size((231, 13)).lines
+    row = max(1, height - 1)
+    term.line_mode()
+    sys.stdout.write(f"\033[?25h\033[{row};1H\033[K{role}> ")
+    sys.stdout.flush()
+    try:
+        line = input()
+    except (KeyboardInterrupt, EOFError):
+        return False
+    finally:
+        sys.stdout.write("\033[?25l")
+        sys.stdout.flush()
+        term.raw_mode()
+    if line.strip():
+        child.send(line.strip())
+        time.sleep(0.3)
+    return True
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="VIGIL demo wall, broker pane")
     parser.add_argument("--role", default="broker",
-                        choices=["broker", "ResponseTeam", "PublicShield", "ResearchArchive"])
+                        choices=["broker", "ResponseTeam", "PublicShield", "ResearchArchive"]
+                        + list(pub_model.ROLES))
     parser.add_argument("--once", action="store_true", help="render one frame and exit")
     parser.add_argument("--plain", action="store_true", help="strip colour in --once")
     parser.add_argument("--width", type=int, help="width for --once")
@@ -628,7 +649,9 @@ def main(argv=None):
     _win_vt()
     term = Terminal()
     term.raw_mode()
-    enter_screen("VIGIL — Broker" if args.role == "broker" else f"{args.role} — Subscriber")
+    title = ("VIGIL — Broker" if args.role == "broker"
+             else f"{args.role} — {'Publisher' if args.role in pub_model.ROLES else 'Subscriber'}")
+    enter_screen(title)
     child = Child()
     child.start(command_for(args.role), pipe_stdin=args.role in pub_model.ROLES)
     try:
@@ -637,7 +660,12 @@ def main(argv=None):
                 while child.alive():
                     state.refresh()
                     draw(state, child, args.role)
-                    time.sleep(0.2)
+                    if args.role in pub_model.ROLES and pub_model.ROLES[args.role][1]:
+                        if not publisher_prompt(term, child, args.role):
+                            child.stop()
+                            break
+                    else:
+                        time.sleep(0.2)
             except KeyboardInterrupt:
                 child.stop()
             state.refresh()
