@@ -286,6 +286,60 @@ def main():
 
             print("Committed log is valid JSON")
             print("Acknowledged baseline event preserved")
+
+                        #This disables the crash checkpoint before restarting the broker
+            armed.clear()
+            checkpoint.clear()
+
+
+
+
+            #This restarts sssthe broker using the same saved data
+            broker_process = context.Process(
+                target=run_test_broker,
+                args=(
+                    src_dir,
+                    test_port,
+                    event_log,
+                    offsets_file,
+                    armed,
+                    checkpoint,
+                ),
+            )
+            broker_process.start()
+            wait_for_broker(broker_process, test_port)
+
+            print("Test broker restarted")
+
+            # subscribe test client to receive the saved baseline event
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as subscriber:
+                subscriber.sendall(b"SUB|sighting|f01-check\n")
+
+                subscription_reply = read_reply(subscriber)
+
+                if subscription_reply != "SUB_ACK|sighting":
+                    raise RuntimeError(
+                        f"Unexpected subscription reply: {subscription_reply}"
+                    )
+
+                replay_reply = read_reply(subscriber)
+                command, separator, event_json = replay_reply.partition("|")
+
+                if command != "EVENT" or not separator:
+                    raise RuntimeError(
+                        f"Expected replay EVENT, received {replay_reply}"
+                    )
+
+                replayed_event = json.loads(event_json)
+
+                #This compares the replayed event the original saved eventtt
+                if replayed_event != baseline_event:
+                    raise RuntimeError("Replayed event differs from the baseline")
+
+                print("Replayed event:", replayed_event["event_id"])
+                print("Baseline replay verified after broker restart")
    
    
         finally:
