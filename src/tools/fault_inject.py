@@ -400,10 +400,227 @@ def _run_f02_subscriber(src_dir, test_port, ack_checkpoint):
     subscriber.main(["--as", "ResponseTeam"])
 
 
+
+
+    #This reads subscriber's last acknowledged position for topic
+    if not offsets_file.exists():
+        return -1
+
+    offsets = json.loads(offsets_file.read_text(encoding="utf-8"))
+    return offsets.get(subscriber_id, {}).get(topic, -1)
+
+def stop_test_process(process):
+    #This stops a test process and checks that it if  finishedddd
+    if process is None:
+        return
+
+    if process.is_alive():
+        os.kill(process.pid, signal.SIGINT)
+        process.join(timeout=3)
+
+    if process.is_alive():
+        process.kill()
+        process.join(timeout=3)
+
+    if process.is_alive():
+        raise RuntimeError("Test process did not stop")
+
+
+def run_f02(observed):
+    #This checks that an event replays after its subscriber dies before ACK
+    src_dir = Path(__file__).resolve().parents[1]
+    subscriber_id = "responseteam"
+    topic = "sighting"
+
+    with tempfile.TemporaryDirectory(prefix="vigil-f02-") as test_dir:
+        data_dir = Path(test_dir) / "data"
+        data_dir.mkdir()
+
+        event_log = data_dir / "event_log.json"
+        offsets_file = data_dir / "offsets.json"
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_socket:
+            test_socket.bind(("127.0.0.1", 0))
+            test_port = test_socket.getsockname()[1]
+
+        observed["test_port"] = test_port
+        observed["subscriber_id"] = subscriber_id
+
+        context = multiprocessing.get_context("spawn")
+        armed = context.Event()
+        broker_checkpoint = context.Event()
+        ack_checkpoint = context.Event()
+
+        broker_process = context.Process(
+            target=run_test_broker,
+            args=(
+                src_dir,
+                test_port,
+                event_log,
+                offsets_file,
+                armed,
+                broker_checkpoint,
+            ),
+        )
+        subscriber_process = None
+
+        try:
+            #This starts the broker with its crash checkpoint disabled
+            broker_process.start()
+            wait_for_broker(broker_process, test_port)
+            print("F-02 test broker is ready")
+
+            payload = {
+                "kind": "F-02 unacknowledged event",
+                "sev": 2,
+                "source": "fault_inject",
+            }
+
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as publisher:
+                message = f"PUB|{topic}|{json.dumps(payload)}\n"
+                publisher.sendall(message.encode("utf-8"))
+                reply = read_reply(publisher)
+
+            command, separator, event_id = reply.partition("|")
+
+            if command != "PUB_ACK" or not separator or not event_id:
+                raise RuntimeError(f"Expected PUB_ACK, received {reply}")
+
+            saved_log = json.loads(event_log.read_text(encoding="utf-8"))
+            saved_events = saved_log.get(topic, [])
+
+            if len(saved_events) != 1:
+                raise RuntimeError("Expected exactly one saved event")
+
+            saved_event = saved_events[0]
+
+            if (
+                saved_event.get("event_id") != event_id
+                or saved_event.get("topic") != topic
+                or saved_event.get("payload") != payload
+            ):
+                raise RuntimeError("Saved event does not match the publish")
+
+            observed["saved_event"] = saved_event
+            print("F-02 event saved:", event_id)
+
+            #This records the offset before the subscriber receives the event
+            before_offset = read_offset(offsets_file, subscriber_id, topic)
+            observed["offset_before_delivery"] = before_offset
+
+            if before_offset != -1:
+                raise RuntimeError("Fresh subscriber already has an ACK offset")
+
+            subscriber_process = context.Process(
+                target=run_f02_subscriber,
+                args=(src_dir, test_port, ack_checkpoint),
+            )
+            subscriber_process.start()
+
+            #This waits until the real subscriber pauses before sending its ACK
+            if not ack_checkpoint.wait(timeout=5):
+                raise TimeoutError("Subscriber did not reach the ACK checkpoint")
+
+            paused_offset = read_offset(offsets_file, subscriber_id, topic)
+            observed["offset_at_ack_checkpoint"] = paused_offset
+
+            if paused_offset != before_offset:
+                raise RuntimeError("Offset advanced before the ACK was sent")
+
+            print("Subscriber paused before ACK")
+
+            #This kills the subscriber while its ACK is still unsent
+            subscriber_process.kill()
+            subscriber_process.join(timeout=5)
+
+            if subscriber_process.exitcode != -signal.SIGKILL:
+                raise RuntimeError("Subscriber did not exit through SIGKILL")
+
+            observed["subscriber_exit_code"] = subscriber_process.exitcode
+            print("Subscriber killed with SIGKILL")
+
+            after_kill_offset = read_offset(offsets_file, subscriber_id, topic)
+            observed["offset_after_subscriber_kill"] = after_kill_offset
+
+            if after_kill_offset != before_offset:
+                raise RuntimeError("Offset changed despite the missing ACK")
+
+            #This reconnects a harness client using the same subscriber ID
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as subscriber:
+                message = f"SUB|{topic}|{subscriber_id}\n"
+                subscriber.sendall(message.encode("utf-8"))
+
+                reply = read_reply(subscriber)
+
+                if reply != f"SUB_ACK|{topic}":
+                    raise RuntimeError(f"Unexpected subscription reply: {reply}")
+
+                reply = read_reply(subscriber)
+                command, separator, event_json = reply.partition("|")
+
+                if command != "EVENT" or not separator:
+                    raise RuntimeError(f"Expected replay EVENT, received {reply}")
+
+                replayed_event = json.loads(event_json)
+                observed["replayed_event"] = replayed_event
+
+                if replayed_event != saved_event:
+                    raise RuntimeError("Replayed event differs from the saved event")
+
+                print("Unacknowledged event replayed:", event_id)
+
+                #This acknowledges the replay and waits for the saved offset
+                message = f"ACK|{topic}|{subscriber_id}|{event_id}\n"
+                subscriber.sendall(message.encode("utf-8"))
+
+                deadline = time.monotonic() + 5
+
+                while read_offset(offsets_file, subscriber_id, topic) != 0:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("Replay ACK did not advance the offset")
+                    time.sleep(0.05)
+
+            observed["offset_after_replay_ack"] = 0
+            observed["replay_matches_saved_event"] = True
+            print("Replay ACK advanced the offset to 0")
+
+        finally:
+            #This attempts cleanup of both processes even if one cleanup fails
+            try:
+                stop_test_process(subscriber_process)
+                observed["subscriber_stopped"] = True
+            finally:
+                stop_test_process(broker_process)
+                observed["broker_stopped"] = True
+
+            print("F-02 test processes stopped")
+
+
+
+
 def main():
     #reads the selected fault case and displays it
     cases = {
         "F-01": run_f01,
+        "F-02": run_f02,
+    }
+
+
+    #selctes behaviour of report
+    expected_results = {
+        "F-01": (
+            "The acknowledged baseline survives SIGKILL after temporary-file "
+            "fsync and before replacement, and replays unchanged after restart."
+        ),
+        "F-02": (
+            "An event received by a subscriber killed before ACK replays "
+            "when the same subscriber ID reconnects. Its offset advances "
+            "only after the replay is acknowledged."
+        ),
     }
 
     parser = argparse.ArgumentParser(description="VIGIL QA Tests")
@@ -450,11 +667,7 @@ def main():
         report.write(f"\n### {args.case} Automated Run\n\n")
         report.write(f"**Date:** {result['date']}\n\n")
         report.write(f"**Verdict:** {verdict}\n\n")
-        report.write(
-            "**Expected:** The acknowledged baseline survives SIGKILL "
-            "after temporary-file fsync and before replacement, "
-            "and replays unchanged after restart.\n\n"
-        )
+        report.write(f"**Expected:** {expected_results[args.case]}\n\n")
         report.write("**Observed results and evidence:**\n\n")
         report.write("```json\n")
         report.write(json.dumps(result, indent=2))
