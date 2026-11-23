@@ -409,11 +409,13 @@ def build_subscriber(role, state, now, width, big, status, received, queued):
 
 
 def lines_for(state, child, now, width, height, role="broker"):
-    if width < 120 or height < 10:
+    minimum = 120 if role == "broker" else 70
+    if width < minimum or height < 10:
         return [
             "",
             f"  VIGIL — {role} needs a wider window ({width}×{height})",
-            "  resize to at least 150×12; 231×13 is the target",
+            "  resize to at least 150×12; 231×13 is the target" if role == "broker"
+            else f"  resize to at least {minimum}×12",
         ]
     err = ""
     up = None
