@@ -2,10 +2,12 @@
 # spare port, breaks exactly one thing, checks what actually happened, and
 # writes the row in the report.
 # A case that still needs you to kill a window by hand isn't a case yet.
-
+from pathlib import Path
 import argparse
-import tempfile 
+import tempfile
 import socket
+
+
 
 
 
@@ -15,25 +17,35 @@ def main():
     parser.add_argument("--case", required=True, choices=["F-01"])
 
 
-
     args = parser.parse_args()
     print("Selected case:", args.case)
 
+    src_dir = Path(__file__).resolve().parents[1]
+    print("Source folder:", src_dir)
 
-     #Create temp folder for fault testss
+
+
+    #Create temp folder for fault testss
     with tempfile.TemporaryDirectory(prefix="vigil-f01-") as test_dir:
-                print("Test folder:", test_dir)
+        print("Test folder:", test_dir)
 
-
-    # Ask the operating system for an available local porrrt
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_socket:
+        # Ask the operating system for an available local porrrt
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_socket:
             test_socket.bind(("127.0.0.1", 0))
             test_port = test_socket.getsockname()[1]
 
-            print("Test port:", test_port)
+        print("Test port:", test_port)
+
+        # Set up the files used by the test broker.
+        data_dir = Path(test_dir) / "data"
+        data_dir.mkdir()
+
+        event_log = data_dir / "event_log.json"
+        offsets_file = data_dir / "offsets.json"
+
+        print("Event log:", event_log)
+        print("Offsets:", offsets_file)
+
 
 if __name__ == "__main__":
-    main(
-
-    )
-
+    main()
