@@ -234,6 +234,58 @@ def main():
 
 
             print("Baseline event verified on disk")
+
+        #This enables the pause during the next event save
+            armed.set()
+
+            interrupted_payload = {
+                "kind": "F-01 interrupted event",
+                "sev": 2,
+                "source": "fault_inject",
+            }
+
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as publisher:
+             
+                message = (
+               
+               
+               
+                    f"PUB|sighting|{json.dumps(interrupted_payload)}\n"
+                )
+                publisher.sendall(message.encode("utf-8"))
+
+                #This waits until the temporary event log has been synced
+                if not checkpoint.wait(timeout=5):
+                    raise TimeoutError("Broker did not reach the crash checkpoint")
+
+                print("Crash checkpoint reached")
+
+                #This kills the test broker while the save is paused
+               
+               
+                broker_process.kill()
+                broker_process.join(timeout=5)
+
+                if broker_process.exitcode != -signal.SIGKILL:
+                    raise RuntimeError("Test broker did not exit through SIGKILL")
+
+                print("Test broker killed with SIGKILL")
+
+
+
+
+
+            #This checks that the committed log survived the interrupted save
+            after_crash_bytes = event_log.read_bytes()
+            json.loads(after_crash_bytes)
+
+            if after_crash_bytes != baseline_bytes:
+                raise RuntimeError("Committed log changed before replacement")
+
+            print("Committed log is valid JSON")
+            print("Acknowledged baseline event preserved")
    
    
         finally:
