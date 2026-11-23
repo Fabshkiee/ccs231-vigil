@@ -1739,6 +1739,338 @@ def run_f07(observed):
             observed["broker_stopped"] = True
             print("F-07 test broker stopped")
 
+def run_f08_subscriber(src_dir, test_port, output_file):
+    #Run the normal subscriber and capture its output
+    sys.path.insert(0, str(src_dir))
+
+    import common.constants as constants
+
+    constants.PORT = test_port
+
+    import subscriber
+
+    with output_file.open("w", encoding="utf-8") as output:
+        with contextlib.redirect_stdout(output):
+            subscriber.main(["--as", "ResponseTeam"])
+
+def publish_f08_load(
+    test_port,
+    publisher_name,
+    start_barrier,
+    shutdown_started,
+    stop_load,
+    load_ready,
+):
+    #Publish traffic until shutdown or the safety limit is reached
+    accepted = []
+    interrupted = []
+
+    with socket.create_connection(
+        ("127.0.0.1", test_port), timeout=5
+    ) as publisher:
+        start_barrier.wait(timeout=5)
+
+        for number in range(1000):
+            if stop_load.is_set():
+                break
+
+            payload = {
+                "kind": f"F-08 {publisher_name} event {number}",
+                "sev": 2,
+                "source": publisher_name,
+            }
+
+            try:
+                message = f"PUB|sighting|{json.dumps(payload)}\n"
+                publisher.sendall(message.encode("utf-8"))
+                reply = read_reply(publisher)
+            except OSError as exc:
+                if not shutdown_started.is_set():
+                    raise
+
+                interrupted.append({
+                    "payload": payload,
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
+                break
+
+            command, separator, event_id = reply.partition("|")
+
+            if command != "PUB_ACK" or not separator or not event_id:
+                raise RuntimeError(f"Expected PUB_ACK, received {reply}")
+
+            accepted.append({
+                "event_id": event_id,
+                "payload": payload,
+            })
+
+            #Signal that this publisher has produced active traffic
+            if len(accepted) >= 5:
+                load_ready.set()
+
+    return {
+        "accepted": accepted,
+        "interrupted": interrupted,
+    }
+
+
+def run_f08(observed):
+    #Check graceful broker shutdown while publishers and a subscriber are active
+    src_dir = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(src_dir))
+
+    from common.constants import DRAIN_S
+
+    subscriber_id = "responseteam"
+    topic = "sighting"
+
+    with tempfile.TemporaryDirectory(prefix="vigil-f08-") as test_dir:
+        data_dir = Path(test_dir) / "data"
+        data_dir.mkdir()
+
+        event_log = data_dir / "event_log.json"
+        offsets_file = data_dir / "offsets.json"
+        output_file = Path(test_dir) / "subscriber-output.txt"
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as test_socket:
+            test_socket.bind(("127.0.0.1", 0))
+            test_port = test_socket.getsockname()[1]
+
+        context = multiprocessing.get_context("spawn")
+        armed = context.Event()
+        checkpoint = context.Event()
+
+        broker_process = context.Process(
+            target=run_test_broker,
+            args=(
+                src_dir,
+                test_port,
+                event_log,
+                offsets_file,
+                armed,
+                checkpoint,
+            ),
+        )
+        subscriber_process = None
+
+        shutdown_started = threading.Event()
+        stop_load = threading.Event()
+        first_ready = threading.Event()
+        second_ready = threading.Event()
+        start_barrier = threading.Barrier(3)
+
+        observed["test_port"] = test_port
+        observed["shutdown_budget_seconds"] = DRAIN_S
+
+        try:
+            broker_process.start()
+            wait_for_broker(broker_process, test_port)
+            print("F-08 test broker is ready")
+
+            #Save a warmup event to verify subscriber readiness
+            warmup_payload = {
+                "kind": "F-08 warmup",
+                "sev": 2,
+                "source": "fault_inject",
+            }
+
+            with socket.create_connection(
+                ("127.0.0.1", test_port), timeout=5
+            ) as publisher:
+                message = f"PUB|{topic}|{json.dumps(warmup_payload)}\n"
+                publisher.sendall(message.encode("utf-8"))
+                reply = read_reply(publisher)
+
+            command, separator, warmup_id = reply.partition("|")
+
+            if command != "PUB_ACK" or not separator or not warmup_id:
+                raise RuntimeError(f"Expected PUB_ACK, received {reply}")
+
+            observed["warmup_event_id"] = warmup_id
+
+            subscriber_process = context.Process(
+                target=run_f08_subscriber,
+                args=(src_dir, test_port, output_file),
+            )
+            subscriber_process.start()
+
+            deadline = time.monotonic() + 5
+
+            while read_offset(offsets_file, subscriber_id, topic) != 0:
+                if not subscriber_process.is_alive():
+                    raise RuntimeError("Subscriber exited during startup")
+
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Subscriber did not acknowledge warmup")
+
+                time.sleep(0.05)
+
+            print("F-08 subscriber is ready")
+
+            #Start two publishers and request shutdown during their traffic
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                first = workers.submit(
+                    publish_f08_load,
+                    test_port,
+                    "publisher-a",
+                    start_barrier,
+                    shutdown_started,
+                    stop_load,
+                    first_ready,
+                )
+                second = workers.submit(
+                    publish_f08_load,
+                    test_port,
+                    "publisher-b",
+                    start_barrier,
+                    shutdown_started,
+                    stop_load,
+                    second_ready,
+                )
+
+                try:
+                    start_barrier.wait(timeout=5)
+
+                    if not first_ready.wait(timeout=5):
+                        raise TimeoutError("First publisher did not establish load")
+
+                    if not second_ready.wait(timeout=5):
+                        raise TimeoutError("Second publisher did not establish load")
+
+                    if first.done() or second.done():
+                        raise RuntimeError("Publisher finished before shutdown")
+
+                    if not subscriber_process.is_alive():
+                        raise RuntimeError("Subscriber exited before shutdown")
+
+                    observed["active_publishers_at_sigint"] = 2
+                    print("Both publishers active; sending SIGINT")
+
+                    shutdown_started.set()
+                    shutdown_time = time.monotonic()
+                    os.kill(broker_process.pid, signal.SIGINT)
+                    broker_process.join(timeout=DRAIN_S)
+
+                    duration = time.monotonic() - shutdown_time
+                    observed["shutdown_duration_seconds"] = duration
+                    observed["broker_exit_code"] = broker_process.exitcode
+
+                    if broker_process.is_alive():
+                        raise TimeoutError("Broker exceeded its shutdown budget")
+
+                    if duration > DRAIN_S:
+                        raise RuntimeError("Broker shutdown took too long")
+
+                    if broker_process.exitcode != 0:
+                        raise RuntimeError("Broker did not exit with status 0")
+
+                finally:
+                    stop_load.set()
+
+                first_result = first.result(timeout=6)
+                second_result = second.result(timeout=6)
+
+            #Collect acknowledged and interrupted publishes from both workers
+            accepted = first_result["accepted"] + second_result["accepted"]
+            interrupted = (
+                first_result["interrupted"] + second_result["interrupted"]
+            )
+
+            observed["publisher_a_acknowledged"] = len(first_result["accepted"])
+            observed["publisher_b_acknowledged"] = len(second_result["accepted"])
+            observed["acknowledged_publishes"] = accepted
+            observed["interrupted_publishes"] = interrupted
+
+            if (
+                len(first_result["accepted"]) < 5
+                or len(second_result["accepted"]) < 5
+            ):
+                raise RuntimeError("Insufficient acknowledged traffic")
+
+            #Stop the subscriber after the broker shutdown and flush its output
+            stop_test_process(subscriber_process)
+            observed["subscriber_exit_code"] = subscriber_process.exitcode
+
+            if subscriber_process.exitcode != 0:
+                raise RuntimeError("Subscriber did not shut down cleanly")
+
+            observed["subscriber_output"] = output_file.read_text(
+                encoding="utf-8"
+            )
+
+            #Verify valid files and preservation of every acknowledged publish
+            saved_log = json.loads(event_log.read_text(encoding="utf-8"))
+            saved_events = saved_log.get(topic, [])
+            stored_by_id = {
+                event["event_id"]: event for event in saved_events
+            }
+
+            if len(stored_by_id) != len(saved_events):
+                raise RuntimeError("Saved log contains duplicate event IDs")
+
+            expected_payloads = {warmup_id: warmup_payload}
+
+            for event in accepted:
+                if event["event_id"] in expected_payloads:
+                    raise RuntimeError("Acknowledged event IDs are not unique")
+
+                expected_payloads[event["event_id"]] = event["payload"]
+
+            for event_id, payload in expected_payloads.items():
+                saved_event = stored_by_id.get(event_id)
+
+                if saved_event is None:
+                    raise RuntimeError(
+                        f"Acknowledged event missing after shutdown: {event_id}"
+                    )
+
+                if (
+                    saved_event.get("topic") != topic
+                    or saved_event.get("payload") != payload
+                ):
+                    raise RuntimeError("Acknowledged event changed on disk")
+
+            saved_offsets = json.loads(
+                offsets_file.read_text(encoding="utf-8")
+            )
+            last_offset = saved_offsets.get(subscriber_id, {}).get(topic, -1)
+
+            if (
+                type(last_offset) is not int
+                or not 0 <= last_offset < len(saved_events)
+            ):
+                raise RuntimeError("Stored subscriber offset is invalid")
+
+            observed["saved_offsets"] = saved_offsets
+            observed["stored_event_count"] = len(saved_events)
+            observed["acknowledged_events_preserved"] = True
+            observed["saved_files_valid_json"] = True
+            observed["stored_without_pub_ack"] = [
+                event_id
+                for event_id in stored_by_id
+                if event_id not in expected_payloads
+            ]
+
+            print("Broker exited with status 0")
+            print("Shutdown duration:", duration)
+            print("All acknowledged events preserved")
+            print("Saved log and offsets are valid JSON")
+            print("Interrupted publishes:", len(interrupted))
+
+        finally:
+            #Clean up both processes even when a shutdown check fails
+            stop_load.set()
+
+            try:
+                stop_test_process(subscriber_process)
+                observed["subscriber_stopped"] = True
+            finally:
+                stop_test_process(broker_process)
+                observed["broker_stopped"] = True
+
+            print("F-08 test processes stopped")
+
+
 def main():
     #reads the selected fault case and displays it
     cases = {
@@ -1749,6 +2081,7 @@ def main():
         "F-05": run_f05,
         "F-06": run_f06,
         "F-07": run_f07,
+        "F-08": run_f08,
     }
 
 
@@ -1787,6 +2120,12 @@ def main():
             "A second connection using the same subscriber ID closes the old "
             "connection. The replacement receives the published event once "
             "and advances the shared subscriber offset through ACK."
+        ),
+        "F-08": (
+            "During active publisher traffic, SIGINT makes the broker exit "
+            "with status 0 within its configured shutdown budget. Saved JSON "
+            "files remain valid and all acknowledged publishes remain intact. "
+            "Interrupted publishes are recorded."
         ),
     }
 
