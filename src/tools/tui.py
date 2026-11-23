@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+import publisher as pub_model  # noqa: E402
 import subscriber as client_model  # noqa: E402
 from common import storage  # noqa: E402
 from common.constants import EVENT_LOG_FILE, OFFSETS_FILE  # noqa: E402
@@ -215,10 +216,10 @@ class BrokerState:
 
 
 def command_for(role):
-    cmd = [sys.executable, "-u", str(SRC / ("broker.py" if role == "broker" else "subscriber.py"))]
-    if role != "broker":
-        cmd += ["--as", role]
-    return cmd
+    if role == "broker":
+        return [sys.executable, "-u", str(SRC / "broker.py")]
+    module = "publisher.py" if role in pub_model.ROLES else "subscriber.py"
+    return [sys.executable, "-u", str(SRC / module), "--as", role]
 
 
 class Child:
@@ -228,22 +229,29 @@ class Child:
         self.spawn_time = 0.0
         self.stopped_at = None
         self._reader = None
+        self.stdin = None
 
-    def start(self, cmd):
+    def start(self, cmd, pipe_stdin=False):
         self.lines.clear()
         self.stopped_at = None
         self.spawn_time = time.time()
         self.proc = subprocess.Popen(
             cmd,
             cwd=str(ROOT),
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE if pipe_stdin else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
         )
+        self.stdin = self.proc.stdin if pipe_stdin else None
         self._reader = threading.Thread(target=self._read, daemon=True)
         self._reader.start()
+
+    def send(self, line):
+        if self.stdin is not None:
+            self.stdin.write(line + "\n")
+            self.stdin.flush()
 
     def _read(self):
         try:
@@ -262,6 +270,9 @@ class Child:
         return ""
 
     def stop(self):
+        if self.stdin is not None:
+            self.stdin.close()
+            self.stdin = None
         if not self.alive():
             self.stopped_at = time.time()
             return
@@ -558,7 +569,7 @@ def main(argv=None):
     term.raw_mode()
     enter_screen("VIGIL — Broker" if args.role == "broker" else f"{args.role} — Subscriber")
     child = Child()
-    child.start(command_for(args.role))
+    child.start(command_for(args.role), pipe_stdin=args.role in pub_model.ROLES)
     try:
         while True:
             try:
@@ -572,7 +583,7 @@ def main(argv=None):
             draw(state, child, args.role)
             if not restart_prompt(term):
                 break
-            child.start(command_for(args.role))
+            child.start(command_for(args.role), pipe_stdin=args.role in pub_model.ROLES)
     finally:
         child.stop()
         term.line_mode()
