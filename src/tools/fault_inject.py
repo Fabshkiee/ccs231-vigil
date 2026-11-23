@@ -20,7 +20,8 @@ import signal
 
 
 
-def run_test_broker(src_dir, test_port, event_log, offsets_file):
+#starts test broker
+def run_test_broker(src_dir, test_port, event_log, offsets_file, armed, checkpoint):
     sys.path.insert(0, str(src_dir))
 
     import common.constants as constants
@@ -32,11 +33,52 @@ def run_test_broker(src_dir, test_port, event_log, offsets_file):
     constants.EVENT_LOG_FILE = str(event_log)
     constants.OFFSETS_FILE = str(offsets_file)
 
+    import common.storage as storage
+
+    original_fsync = storage.os.fsync
+    temporary_log = Path(str(event_log) + ".tmp")
+
+    def pause_after_fsync(file_descriptor):
+    
+    
+    
+        #This pauses the broker after syncing the temporary event log
+        original_fsync(file_descriptor)
+
+        if not armed.is_set():
+            return
+
+        try:
+            temporary_file = temporary_log.stat()
+        except FileNotFoundError:
+            return
+
+        opened_file = os.fstat(file_descriptor)
+
+        if (
+ 
+ 
+ 
+            opened_file.st_dev != temporary_file.st_dev
+            or opened_file.st_ino != temporary_file.st_ino
+        ):
+            return
+
+        checkpoint.set()
+
+        #The parent must kill this broker before this timeout expires
+        time.sleep(15)
+        os._exit(90)
+
+    storage.os.fsync = pause_after_fsync
+
     import broker
     broker.BROKER_HOST = "127.0.0.1"
     broker.start_broker()
 
-#starts test broker
+
+#This waits up to five seconds for the test broker to accept connections
+
 def wait_for_broker(process, test_port):
     deadline = time.monotonic() + 5
 
@@ -55,6 +97,7 @@ def wait_for_broker(process, test_port):
     raise TimeoutError("Test broker did not start within 5 seconds")
 
 
+#Reads one reply from broker
 def read_reply(connection):
     deadline = time.monotonic() + 5
     reply = bytearray()
@@ -123,9 +166,21 @@ def main():
         print("Offsets:", offsets_file)
 
         context = multiprocessing.get_context("spawn")
+        #These signals control when the broker pauses for the crash test
+        armed = context.Event()
+        checkpoint = context.Event()
         broker_process = context.Process(
+
             target=run_test_broker,
-            args=(src_dir, test_port, event_log, offsets_file),
+            args=(
+                src_dir,
+                test_port,
+                event_log,
+                offsets_file,
+                armed,
+                checkpoint,
+            ),
+        
         )
 
         broker_process.start()
