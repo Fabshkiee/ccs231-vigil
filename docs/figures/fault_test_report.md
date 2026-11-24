@@ -64,6 +64,59 @@ Ran 9 tests in 0.000s
 
 9 of 9 tests PASSED.
 
+
+### P-1 (PROTOCOL TEST 1) Supported Messages Round Trip Retest
+
+**Expected:**
+
+Parsing a formatted message preserves its command name and all field values.
+
+**Input messages / values:**
+
+- SUB: topic `sighting`, subscriber ID `responseteam`.
+- SUB_ACK: topic `alert`.
+- PUB_ACK: event ID `e-8`.
+- GET_STATS: topic `alert`.
+- PUB: topic `sighting`, payload `{"note":"a|b","sev":5}`.
+- EVENT: event ID `x`, topic `alert`, payload `{}`, created_at `1.0`.
+- ACK: topic `sighting`, subscriber ID `responseteam`, event ID `e-8`.
+- ERR: code `400`, message `empty_topic`.
+- Dispatcher: SUB with topic `sighting`, subscriber ID `team`.
+
+**Command to test used:**
+
+```bash
+python3 tests/test_protocol.py TestRoundTrip -v
+```
+
+**Observed results:**
+
+All nine tests returned `ok`. The updated assertions confirmed the command names and complete returned fields. The dispatcher comparison also passed.
+
+**Evidence / log reference:**
+
+```text
+test_ack (__main__.TestRoundTrip.test_ack) ... ok
+test_dispatcher_matches_direct_parser (__main__.TestRoundTrip.test_dispatcher_matches_direct_parser) ... ok
+test_err (__main__.TestRoundTrip.test_err) ... ok
+test_event (__main__.TestRoundTrip.test_event) ... ok
+test_get_stats (__main__.TestRoundTrip.test_get_stats) ... ok
+test_pub_ack (__main__.TestRoundTrip.test_pub_ack) ... ok
+test_pub_pipe_in_payload (__main__.TestRoundTrip.test_pub_pipe_in_payload)... ok
+test_sub (__main__.TestRoundTrip.test_sub) ... ok
+test_sub_ack (__main__.TestRoundTrip.test_sub_ack) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.000s
+
+OK
+```
+
+**Verdict:**
+
+**PASSED 9/9.** The previously identified command-name and field-assertion coverage gap is resolved for the tested inputs.
+
+
 ### P-2 (PROTOCOL TEST 2) INVALID FIELD COUNTS
 
 **Expected:**
@@ -103,9 +156,123 @@ OK
 
 Partially Passed. Extra field cases and field count checks have not yet been tested.
 
+
+
+### P-2 (PROTOCOL TEST 2) Invalid Field Counts Retest
+
+**Expected:**
+
+Messages with missing fields or forbidden extra fields return `Err` with reason `bad_field_count` and `close=False`. Invalid JSON containing an additional pipe in PUB or EVENT returns `bad_json`.
+
+**Input messages / values:**
+
+Missing-field and extra-field inputs:
+
+- SUB: `SUB`, `SUB|a`, `SUB|a|b|c`.
+- SUB_ACK: `SUB_ACK`, `SUB_ACK|a|b`.
+- PUB_ACK: `PUB_ACK`, `PUB_ACK|a|b`.
+- GET_STATS: `GET_STATS`, `GET_STATS|a|b`.
+- ACK: `ACK`, `ACK|a`, `ACK|a|b`, `ACK|a|b|c|d`.
+- PUB: `PUB`.
+- EVENT: `EVENT`.
+- ERR: `ERR`, `ERR|400`.
+
+Invalid JSON inputs containing an additional pipe:
+
+- `PUB|sighting|{}|x`
+- `EVENT|{}|x`
+
+**Command to test used:**
+
+```bash
+python3 tests/test_protocol.py TestRejects.test_missing_and_extra_fields TestRejects.test_extra_pipe_in_pub_and_event_is_payload -v
+```
+
+**Observed results:**
+
+Both test methods returned `ok`. Their passing assertions confirmed that all 17 field-count inputs returned `Err` with reason `bad_field_count` and `close=False`.
+
+The two invalid JSON inputs returned `Err` with reason `bad_json` and `close=False`. No uncaught exception occurred.
+
+**Evidence / log reference:**
+
+```text
+test_missing_and_extra_fields (__main__.TestRejects.test_missing_and_extra_fields) ... ok
+test_extra_pipe_in_pub_and_event_is_payload (__main__.TestRejects.test_extra_pipe_in_pub_and_event_is_payload) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+```
+
+**Verdict:**
+
+**PASSED 2/2 test methods.** All 19 input cases passed their assertions. The previously identified field-count coverage gap is resolved for the tested inputs.
+
+
+
+
+
 ### P-3 (PROTOCOL TEST 3) Empty Topic
 
-(NO FILE YET- TEST)
+**Expected:**
+
+Empty and whitespace-only topics are rejected with `Err`, reason `empty_topic`, and `close=False`.
+
+**Input messages / values:**
+
+Each command was tested with an empty topic, spaces-only topic, and tab-only topic:
+
+```text
+SUB||team
+SUB|   |team
+SUB|\t|team
+
+SUB_ACK|
+SUB_ACK|   
+SUB_ACK|\t
+
+PUB||{}
+PUB|   |{}
+PUB|\t|{}
+
+ACK||s|e
+ACK|   |s|e
+ACK|\t|s|e
+
+GET_STATS|
+GET_STATS|   
+GET_STATS|\t
+```
+
+`\t` represents an actual tab character in the test inputs.
+
+**Command to test used:**
+
+```bash
+python3 tests/test_protocol.py TestRejects.test_empty_and_whitespace_topic -v
+```
+
+**Observed results:**
+
+The test method returned `ok`. Its passing assertions confirmed that all 15 inputs returned `Err` with reason `empty_topic` and `close=False`. No uncaught exception occurred.
+
+**Evidence / log reference:**
+
+```text
+test_empty_and_whitespace_topic (__main__.TestRejects.test_empty_and_whitespace_topic) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+```
+
+**Verdict:**
+
+**PASSED 1/1 test method.** All 15 input cases passed their assertions. The previously identified empty-topic coverage gap is resolved for the tested inputs.
+
 
 ### P-4 (PROTOCOL TEST 4) INVALID PUB PAYLOAD
 
@@ -226,6 +393,48 @@ OK
 **Verdict:**
 
 PASS for the four existing buffering checks. Overall P-07 remains incomplete pending broker integration and remaining coverage.
+
+
+### P-6 (PROTOCOL TEST 6) Line Framing and Message Size Limit Retest
+
+**Expected:**
+
+When one chunk contains a complete line followed by an unfinished line, the complete line is returned and the unfinished portion stays buffered. The next chunk completes the buffered message without losing data.
+
+**Input messages / values:**
+
+- Initial buffer: `b""`.
+- First chunk: `b"SUB|a|b\nPUB|sig"`.
+- Second chunk: `b"hting|{}\n"`.
+
+**Command to test used:**
+
+```bash
+python3 tests/test_protocol.py TestBuffering.test_complete_line_then_unfinished_line_in_one_chunk -v
+```
+
+**Observed results:**
+
+The test returned `ok`. Its passing assertions confirmed:
+
+- After the first chunk, the returned lines were `[b"SUB|a|b"]`, the remainder was `b"PUB|sig"`, and the error was `None`.
+- After the second chunk, the returned lines were `[b"PUB|sighting|{}"]`, the remainder was `b""`, and the error was `None`.
+
+**Evidence / log reference:**
+
+```text
+test_complete_line_then_unfinished_line_in_one_chunk (__main__.TestBuffering.test_complete_line_then_unfinished_line_in_one_chunk) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+```
+
+**Verdict:**
+
+**PASSED 1/1.** The complete-line-plus-unfinished-remainder coverage gap is resolved. Actual connection behavior remains pending broker integration.
+
 
 ### Protocol Stage Record
 
@@ -520,4 +729,242 @@ No failures occurred in the existing code. Remaining gaps and questions:
 Overall unit-test suite: **PASSED 16/16**.
 
 Overall storage checklist: **INCOMPLETE**, with outstanding checks and integration verification.
-````
+
+
+## INTEGRATION TESTING (DEVELOPERS: JOHN MARK AND MJ)
+
+**Files that will be tested:** `src/broker.py`, `src/publisher.py`, and `src/subscriber.py`
+
+
+### I-1 (INTEGRATION TEST 1) Delivery to Matching Subscribers
+
+**Expected:**
+
+Both subscribers of `sighting` receive the published event. PublicShield, subscribed to `alert`, receives none during the observation window. The event is persisted, and routing follows the topic.
+
+**Date and code version:**
+
+November 23, 2026 — commit `3777526`..
+
+**Input messages / values:**
+
+Publisher role: `SightingReports`.
+
+Typed input:
+
+```text
+QA fanout check 002, severity 2
+```
+
+Subscribers:
+
+- ResponseTeam — ID `responseteam`, topics `sighting` and `poltergeist`.
+- ResearchArchive — ID `researcharchive`, topics `readings`, `sighting`, and `poltergeist`.
+- PublicShield — ID `publicshield`, topic `alert`.
+
+**Command to test used:**
+
+Broker startup from a temporary working folder:
+
+```bash
+project_dir="$PWD"
+test_dir="$(mktemp -d -t vigil-i01)"
+cd "$test_dir"
+python3 "$project_dir/src/broker.py"
+```
+
+Each client was started from the project folder in a separate terminal:
+
+```bash
+python3 src/subscriber.py --as ResponseTeam
+python3 src/subscriber.py --as ResearchArchive
+python3 src/subscriber.py --as PublicShield
+python3 src/publisher.py --as SightingReports
+```
+
+**Observation window:**
+
+[Enter the actual duration observed after publishing. Enter five seconds only if measured or observed.]
+
+**Observed results:**
+
+Publisher:
+
+```text
+Event faf56ce9 saved (sighting)
+```
+
+ResponseTeam:
+
+```text
+Event faf56ce9 — sighting: QA fanout check 002, severity 2
+```
+
+ResearchArchive:
+
+```text
+Event faf56ce9 — sighting: QA fanout check 002, severity 2
+```
+
+PublicShield remained quiet during the reported check. Its last displayed subscription message was:
+
+```text
+[sub] subscribed to alert
+```
+
+**Persistence / routing evidence:**
+
+The saved log contained the matching event:
+
+```json
+{
+  "event_id": "faf56ce95a8c4285b99fcd2a163c3dd7",
+  "topic": "sighting",
+  "payload": {
+    "kind": "QA fanout check 002",
+    "sev": 2,
+    "source": "SightingReports"
+  },
+  "created_at": 1795429263.975425
+}
+```
+
+Actual log location:
+
+```text
+src/common/data/event_log.json
+```
+
+The configuration selected this project data folder despite the broker's temporary working directory.
+
+Review of the supplied broker code shows `storage.append_event(event)` is called before subscriber delivery, and subscribers are selected using `subscriptions.get(topic, [])`. The terminal results demonstrate delivery to both matching subscribers. The saved log confirms persistence.
+
+**Evidence / log reference:**
+
+Publisher and subscriber terminal outputs, plus the matching event entry read from `event_log.json`.
+
+**Verdict:**
+
+Matching-subscriber delivery and persistence checks PASSED.
+
+Complete the non-matching-subscriber check by recording the actual observation duration. Persistence-before-delivery and topic-based subscriber selection are supported by review of the supplied broker code.
+
+
+## RECONNECT AND REPLAY TESTING (DEVELOPERS: JOHN MARK AND MJ)
+
+**Files that will be tested:** `src/broker.py`, `src/subscriber.py`, `src/publisher.py`, and `src/common/storage.py`
+
+### R-1 (RECONNECT TEST 1) Three Events Published While Subscriber Is Offline
+
+
+**Expected:**
+
+A subscriber reconnecting with the same ID receives its three missed events in log order. Its stored offset remains unchanged while offline and advances after it processes and acknowledges the replayed events.
+
+**Date and code version:**
+
+November 23, 2026 — commit `d666ef6`.
+
+**Input messages / values:**
+
+- Subscriber role: `ResponseTeam`.
+- Subscriber ID: `responseteam`.
+- Topic under test: `sighting`.
+- Starting acknowledged offset: `1`.
+
+Published while ResponseTeam was stopped:
+
+```text
+QA replay check 001, severity 2
+QA replay check 002, severity 2
+QA replay check 003, severity 2
+```
+
+**Command to test used:**
+
+Broker:
+
+```bash
+python3 src/broker.py
+```
+
+Subscriber, stopped with Control + C before publishing and restarted afterward:
+
+```bash
+python3 src/subscriber.py --as ResponseTeam
+```
+
+Publisher:
+
+```bash
+python3 src/publisher.py --as SightingReports
+```
+
+Offset checks before disconnecting, while offline after publishing, and after replay:
+
+```bash
+PYTHONPATH=src python3 -c 'import json; from common.storage import load_offsets; print(json.dumps(load_offsets().get("responseteam", {}), indent=2))'
+```
+
+Saved event and log-position check:
+
+```bash
+PYTHONPATH=src python3 -c 'import json; from common.storage import load_events; events = load_events().get("sighting", []); print(json.dumps([{"index": i, **e} for i, e in enumerate(events) if e.get("payload", {}).get("kind", "") in ("QA replay check 001", "QA replay check 002", "QA replay check 003")], indent=2))'
+```
+
+**Observed results:**
+
+The publisher confirmed all three events were saved while ResponseTeam was offline.
+
+ResponseTeam's `sighting` offset remained at `1` after publication.
+
+After restarting with the same subscriber ID, ResponseTeam printed all three missed events in the same order as the saved log:
+
+- Index `2`: `8760c92679fe4ccdbcb95d40d12dcaa0` — QA replay check 001.
+- Index `3`: `ca8646e9888141ffa387a982d0290ce1` — QA replay check 002.
+- Index `4`: `2881c21e9fc44bb680d2b8582c3b05d5` — QA replay check 003.
+
+Its stored `sighting` offset then advanced to `4`.
+
+No duplicate prints or previously acknowledged events appeared in the supplied replay output. Duplicate suppression was not exercised by this run because no duplicate delivery was observed.
+
+**Evidence / log reference:**
+
+Publisher output:
+
+```text
+Event 8760c926 saved (sighting)
+Event ca8646e9 saved (sighting)
+Event 2881c21e saved (sighting)
+```
+
+Offset before disconnecting and while offline after publication:
+
+```json
+{
+  "sighting": 1
+}
+```
+
+ResponseTeam replay output:
+
+```text
+Event 8760c926 — sighting: QA replay check 001, severity 2
+Event ca8646e9 — sighting: QA replay check 002, severity 2
+Event 2881c21e — sighting: QA replay check 003, severity 2
+[sub] subscribed to sighting, poltergeist
+```
+
+Offset after replay:
+
+```json
+{
+  "sighting": 4
+}
+```
+
+Saved events were verified through `load_events()`. Their full IDs and positions matched the replay order.
+
+**Verdict:**
+
+**PASS for the tested offline replay scenario.** All three missed events were recovered in log order, and the stored offset advanced from `1` to `4` after processing and acknowledgment.
