@@ -27,7 +27,7 @@ The `alert` line is stamped by the **publisher**, not derived by the broker. The
 
 ```mermaid
 flowchart LR
-    PR[ParanormalReadings] --> BR[(VIGIL broker<br/>TCP :5000)]
+    PR[ParanormalReadings] --> BR[(VIGIL broker<br/>TCP :5001)]
     SR[SightingReports] --> BR
     PA[PoltergeistActivity] --> BR
     BR --> RT[ResponseTeam]
@@ -49,18 +49,25 @@ python3 src/subscriber.py --as ResearchArchive
 python3 src/publisher.py  --as SightingReports
 ```
 
-Subscribers select their topics by role with `--as <Role>`; there is no `--topics` flag. One process per terminal. The demo sequence and expected output are in the System Design Document.
+Subscribers select their topics by role with `--as <Role>`; there is no `--topics` flag. Both client programs accept `--host <broker-ip>` when the broker runs on another machine. One process per terminal. The demo sequence and expected output are in the System Design Document.
 
 ## Optional demo wall
 
 Post-M5 tooling — not part of grading, and never imported by graded code.
 
-Close any running demo windows first, then launch the seven panes:
+Close any running demo windows first. On the machine that hosts the broker, run the host launcher — it starts the broker pane, backs up `src/common/data`, and broadcasts its address on the LAN:
 
-- **macOS:** `bash demos/mac-wall.command`
-- **Windows:** double-click `demos/windows-wall.bat` (or run `powershell -NoProfile -ExecutionPolicy Bypass -File demos/windows-wall.ps1`)
+- **macOS:** `bash demos/mac-host.command`
+- **Windows:** double-click `demos/windows-host.bat`
 
-Each pane owns its real child process. Ctrl+C stops only that role; Enter respawns it. Both launchers refuse to start if a broker is already running and back up `src/common/data` with a timestamp (`${TMPDIR}` on macOS, `%TEMP%` on Windows).
+On other machines on the same network, run the client launcher. It discovers the broker automatically through `src/tools/discovery.py`; if no beacon is seen it falls back to `VIGIL_BROKER_HOST` and then prompts once:
+
+- **macOS:** `bash demos/mac-client.command`
+- **Windows:** double-click `demos/windows-client.bat`
+
+The host runs seven panes; clients run six (no broker pane). Each pane owns its real child process. Ctrl+C stops only that role; Enter respawns it. The host launcher refuses to start if a broker is already running locally and backs up `src/common/data` with a timestamp (`${TMPDIR}` on macOS, `%TEMP%` on Windows). Clients keep no local log.
+
+The broker listens on `0.0.0.0:5001` so LAN clients can reach it; port 5001 avoids the macOS AirPlay conflict on 5000. Allow Python inbound on 5001 and UDP 5002 on the host machine. There is no authentication or encryption — anyone on that network can publish or subscribe, so use an isolated LAN or hotspot.
 
 The broker pane needs at least 120 columns (231×13 target); node panes are sized for 75×21. Column count depends on Terminal font size, so rehearse on the projector.
 
@@ -87,8 +94,12 @@ Add `--once --plain --width N --height N` for a static frame with no child — h
 │   └── figures/
 │       └── architecture.png
 ├── demos/
-│   ├── mac-wall.command    # optional seven-window wall (macOS)
-│   ├── windows-wall.bat    # optional seven-window wall (Windows)
+│   ├── mac-host.command    # host launcher (macOS)
+│   ├── mac-client.command  # client launcher (macOS)
+│   ├── mac-wall.command    # shared wall implementation
+│   ├── windows-host.bat    # host launcher (Windows)
+│   ├── windows-client.bat  # client launcher (Windows)
+│   ├── windows-wall.bat
 │   ├── windows-wall.ps1
 │   ├── mac-demo.command
 │   └── windows-demo.*      # plain-CLI fallback
@@ -99,6 +110,7 @@ Add `--once --plain --width N --height N` for a static frame with no child — h
 │   ├── subscriber.py
 │   └── tools/
 │       ├── tui.py          # optional demo wall, never imported by graded code
+│       ├── discovery.py    # LAN broker beacon / discovery
 │       └── fault_inject.py
 ├── tests/
 ├── scripts/
