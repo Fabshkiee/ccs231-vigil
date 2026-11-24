@@ -9,7 +9,7 @@
 
 ## Status
 
-Skeleton only. The tree below is the plan; the only committed files today are this README, the empty dependency list, and placeholder directories. The broker and clients land at M3, the fault matrix at M4, and the packaging at M5.
+The graded pub/sub backend is complete. Graded output stays line-oriented and plain — no banners, panels or colour gates. An optional seven-window demo wall was added afterwards as tooling; it lives in `src/tools/tui.py` and is never imported by the broker, clients or tests.
 
 ## What it does
 
@@ -43,12 +43,36 @@ The full plate — process boundary, both JSON files, lock names, replay lane �
 python3 --version                  # 3.11 or newer
 
 python3 src/broker.py
-python3 src/subscriber.py --as ResponseTeam  --topics sighting,poltergeist
-python3 src/subscriber.py --as PublicShield  --topics alert
+python3 src/subscriber.py --as ResponseTeam
+python3 src/subscriber.py --as PublicShield
+python3 src/subscriber.py --as ResearchArchive
 python3 src/publisher.py  --as SightingReports
 ```
 
-Four terminals, one process each. The demo sequence and expected output are in the System Design Document.
+Subscribers select their topics by role with `--as <Role>`; there is no `--topics` flag. One process per terminal. The demo sequence and expected output are in the System Design Document.
+
+## Optional demo wall
+
+Post-M5 tooling — not part of grading, and never imported by graded code.
+
+Close any running demo windows first, then launch the seven panes:
+
+- **macOS:** `bash demos/mac-wall.command`
+- **Windows:** double-click `demos/windows-wall.bat` (or run `powershell -NoProfile -ExecutionPolicy Bypass -File demos/windows-wall.ps1`)
+
+Each pane owns its real child process. Ctrl+C stops only that role; Enter respawns it. Both launchers refuse to start if a broker is already running and back up `src/common/data` with a timestamp (`${TMPDIR}` on macOS, `%TEMP%` on Windows).
+
+The broker pane needs at least 120 columns (231×13 target); node panes are sized for 75×21. Column count depends on Terminal font size, so rehearse on the projector.
+
+A single pane can also be run on its own:
+
+```bash
+python3 src/tools/tui.py --role broker
+python3 src/tools/tui.py --role ResponseTeam
+python3 src/tools/tui.py --role SightingReports
+```
+
+Add `--once --plain --width N --height N` for a static frame with no child — handy for checking a window size. `demos/mac-demo.command`, `demos/windows-demo.bat` and `demos/windows-demo.ps1` remain the plain-CLI fallback.
 
 ## Repository layout
 
@@ -62,16 +86,23 @@ Four terminals, one process each. The demo sequence and expected output are in t
 │   ├── fault-test-report.md
 │   └── figures/
 │       └── architecture.png
+├── demos/
+│   ├── mac-wall.command    # optional seven-window wall (macOS)
+│   ├── windows-wall.bat    # optional seven-window wall (Windows)
+│   ├── windows-wall.ps1
+│   ├── mac-demo.command
+│   └── windows-demo.*      # plain-CLI fallback
 ├── src/
 │   ├── common/             # the shared contract
 │   ├── broker.py
 │   ├── publisher.py
 │   ├── subscriber.py
 │   └── tools/
+│       ├── tui.py          # optional demo wall, never imported by graded code
 │       └── fault_inject.py
 ├── tests/
 ├── scripts/
-└── data/                   # runtime only, never committed
+└── src/common/data/        # runtime only, never committed
 ```
 
 Why it looks like this:
