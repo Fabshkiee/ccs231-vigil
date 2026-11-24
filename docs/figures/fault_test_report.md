@@ -2,9 +2,9 @@
 
 ## VIGIL Paranormal Publish Subscribe System
 
-**Report last updated:** November 14, 2026
+**Report last updated:** November 24, 2026
 
-**Code version / commit tested:** 51e70e3.
+**Code version / commit tested:** 5812d86.
 
 **Python version:** Python 3.14.6
 
@@ -1678,6 +1678,9 @@ None identified in this run.
 
 Test connections closed, the broker stopped successfully, and the temporary directory was removed.
 
+
+
+
 ### F-8 (FAULT TEST 8) CLEAN SHUTDOWN UNDER LOAD
 
 **Expected:**
@@ -1785,3 +1788,117 @@ Full in-flight handler draining and refusal of new connections during shutdown r
 **Teardown Result:**
 
 The broker stopped, the subscriber exited with status `0`, publisher connections closed, and the temporary directory was removed.
+
+
+
+## 7 FINAL VERIFICATION AND SUBMISSION RECORD
+
+**Final Code Version:**
+
+[INPUT — run `git rev-parse --short HEAD` after committing the final changes.]
+
+**Clean-Clone Machine / Environment:**
+
+Previous testing used macOS and Python 3.14.
+
+Final clean-clone verification: NOT RUN.
+
+**README Instructions Followed and Result:**
+
+NOT RUN from a clean clone. Record the instructions followed and their actual results during final verification.
+
+**Full-Suite Command:**
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+**Actual Full-Suite Output / Test Counts:**
+
+The previously recorded full-suite run completed successfully:
+
+```text
+Ran 102 tests in 0.908s
+
+OK
+```
+
+- Tests run: 102.
+- Failures: 0.
+- Errors: 0.
+
+This result predates the latest changes. Final verification against the submission version remains pending.
+
+**Protocol Stage Verdict:**
+
+The recorded protocol tests and coverage-gap retests passed. Confirm the completed protocol checklist against the final code version.
+
+**Storage Stage Verdict:**
+
+The previously recorded storage suite passed 16/16 tests.
+
+Additional broker tests were supplied for storage-failure behavior and corrupt-log startup refusal, but their execution results have not yet been recorded.
+
+Other outstanding storage checks must be reconciled with the storage stage record before declaring the entire stage PASS.
+
+**Fan-Out Stage Verdict:**
+
+Matching subscribers received the published sighting event. No corresponding delivery was observed on the subscriber registered for alert.
+
+The final record must include the actual observation window and evidence for the persistence-before-delivery requirement.
+
+**Reconnect Replay Stage Verdict:**
+
+PASS for the recorded replay scenario. Three events published while the subscriber was offline replayed in order after reconnection. The stored offset advanced from `1` to `4`.
+
+**Fault Cases Passed:**
+
+7 / 8.
+
+F-1, F-2, F-3, F-4, F-5, F-6, and F-7 passed their documented checks.
+
+F-6 was tested under the agreed keep-all retention policy; no pruning was implemented or tested.
+
+**Fault Cases Failed, Blocked, or Not Run:**
+
+F-8: FAIL.
+
+The expanded shutdown test confirmed that the listener closed and new connections were refused. However, the broker exited before a paused in-flight delivery could finish.
+
+A broker fix and successful retest remain outstanding.
+
+**Known Limitations and Evidence References:**
+
+- F-1 covers one controlled crash point: after temporary-file fsync and before replacement.
+- F-6 verifies keep-all retention and replay, not pruning safety.
+- F-8 failed on November 24, 2026, at 08:09:40 +08:00, using test port `51337`.
+- F-8 reported `ConnectionError: Broker exited before pending work finished`.
+- Its evidence recorded `new_connection_refused: true` and `broker_alive_before_release: false`.
+- The harness cleanup-reporting flag requires correction: `temporary_directory_removed: false` on the failure path does not establish that the directory remained.
+- Final clean-clone verification and full-suite testing remain pending.
+
+**Overall Conclusion Supported by the Results:**
+
+Seven of eight automated fault cases passed their documented checks. F-8 identified an unresolved shutdown-draining issue.
+
+The numerical fault-case target is met. Overall submission readiness remains pending confirmation of phases 1–4, final verification, and the remaining submission items.
+
+**Fault Tolerance and Recovery Section Supplied for SDD:**
+
+[INPUT — confirm whether the section was supplied and include the unresolved F-8 limitation.]
+
+**Report Exported as fault-test-report.pdf and Checked:**
+
+[INPUT — export the final report and verify its contents and layout.]
+
+**Reviewer and Review Date:**
+
+[INPUT — reviewer name, date, and review outcome.]
+
+**Completion Target from the Implementation Stack:**
+
+Phases 1–4 pass and at least 7 of 8 fault cases pass, with failures documented honestly.
+
+Recorded fault-case outcome: **7 PASS / 1 FAIL**.
+
+Overall completion is not yet confirmed.
