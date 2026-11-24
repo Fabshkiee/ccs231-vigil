@@ -1,4 +1,4 @@
-# The broker. One listener on port 5000 or 5001 if ur in mac 
+# The broker. One listener on port 5001, reachable on the local network.
 # one thread per connection.
 # The order that matters: save the event first, then send it out. And never
 # hold a lock while sending — copy what you need, let go, then send.
@@ -15,7 +15,7 @@ from common.protocol import ErrorCode
 import common.storage as storage
 
 
-BROKER_HOST = "localhost" # change to "0.0.0.0" if receiving external network instead
+BROKER_HOST = "0.0.0.0"
 sub_lock = thr.Lock()
 client_send_locks: dict[sck.socket, thr.Lock] = {}
 topic_locks: dict[str, thr.Lock] = {}
