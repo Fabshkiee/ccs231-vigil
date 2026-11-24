@@ -1,7 +1,7 @@
 # Ports, size caps, timeouts and file paths. No logic lives here
 import os
 
-PORT = 5000
+PORT = 5001
 MAX_LINE_BYTES = 1024 * 1024
 SUB_ACK_TIMEOUT_S = 2
 BACKOFF_STEPS_S = (1, 2, 4, 5)

@@ -42,10 +42,11 @@ class BrokerRejected(Exception):
 
 # allow only valid nodes to connect to system
 def parse_args(argv=None):
-    """Read --as <role> from the command line"""
+    """Read --as <role> and --host from the command line"""
     parser = argparse.ArgumentParser(description="Paranormal Office publisher")
     # dest="role" because 'as' is a Python keyword and can't be an attribute name
     parser.add_argument("--as", dest="role", required=True, choices=sorted(ROLES))
+    parser.add_argument("--host", default=HOST, help=f"broker address (default {HOST})")
     return parser.parse_args(argv)
 
 # extract text payload and severity integer
@@ -221,13 +222,13 @@ def main(argv=None):
     role = args.role
     try:
         # open tcp connection to the broker
-        link = connect(HOST, PORT, PUB_ACK_TIMEOUT_S)
+        link = connect(args.host, PORT, PUB_ACK_TIMEOUT_S)
     except OSError as exc:
         # if broker isn't running/unreachable
-        warn("pub", "cannot_connect", f"{HOST}:{PORT} {exc}")
+        warn("pub", "cannot_connect", f"{args.host}:{PORT} {exc}")
         return 1
     # confirm connection
-    info("pub", f"{role} connected to {HOST}:{PORT}")
+    info("pub", f"{role} connected to {args.host}:{PORT}")
     try:
         # route execution based on role
         if role == AUTO_ROLE:

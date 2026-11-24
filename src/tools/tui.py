@@ -220,11 +220,14 @@ class BrokerState:
         return received, queued
 
 
-def command_for(role):
+def command_for(role, host=None):
     if role == "broker":
         return [sys.executable, "-u", str(SRC / "broker.py")]
     module = "publisher.py" if role in pub_model.ROLES else "subscriber.py"
-    return [sys.executable, "-u", str(SRC / module), "--as", role]
+    cmd = [sys.executable, "-u", str(SRC / module), "--as", role]
+    if host:
+        cmd += ["--host", host]
+    return cmd
 
 
 class Child:
@@ -628,6 +631,8 @@ def main(argv=None):
     parser.add_argument("--plain", action="store_true", help="strip colour in --once")
     parser.add_argument("--width", type=int, help="width for --once")
     parser.add_argument("--height", type=int, help="height for --once")
+    parser.add_argument("--host", default=os.environ.get("VIGIL_BROKER_HOST"),
+                        help="broker address for client panes (or VIGIL_BROKER_HOST)")
     args = parser.parse_args(argv)
 
     state = BrokerState()
@@ -653,7 +658,7 @@ def main(argv=None):
              else f"{args.role} — {'Publisher' if args.role in pub_model.ROLES else 'Subscriber'}")
     enter_screen(title)
     child = Child()
-    child.start(command_for(args.role), pipe_stdin=args.role in pub_model.ROLES)
+    child.start(command_for(args.role, args.host), pipe_stdin=args.role in pub_model.ROLES)
     try:
         while True:
             try:
@@ -675,7 +680,7 @@ def main(argv=None):
             draw(state, child, args.role)
             if not restart_prompt(term):
                 break
-            child.start(command_for(args.role), pipe_stdin=args.role in pub_model.ROLES)
+            child.start(command_for(args.role, args.host), pipe_stdin=args.role in pub_model.ROLES)
     finally:
         child.stop()
         term.line_mode()
