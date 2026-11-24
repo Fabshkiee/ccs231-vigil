@@ -521,6 +521,51 @@ OK
 
 Partially Passed. All three checks passed. Saving multiple events to the same topic, reloading them through `load_events()`, and verifying their order remains untested.
 
+
+
+### S-1 EVENT SAVE AND RELOAD RETEST
+
+**Expected:**
+
+Multiple events saved to the same topic reload with their field values and order preserved.
+
+**Input Values:**
+
+Three events under topic `readings`, in this order:
+
+1. `48b65d75e51b4f3c9ede73d6522cd7a2` — zone-a, level 16.
+2. `1702e6ca6db747b5af72cd419ea44ba8` — zone-b, level 99.
+3. `6bfd48fe472742eca3116083391f1981` — zone-b, level 96.
+
+Each payload included kind `ambient reading` and source `ParanormalReadings`.
+
+**Command To Test Used:**
+
+```bash
+PYTHONPATH=tests python3 -m unittest test_storage.TestStorage.test_save_and_load_events -v
+```
+
+**Observed Results:**
+
+The test appended all three events to a temporary file, then reloaded that same file using `load_events()`.
+
+The returned `readings` list matched the original event objects in order, including event IDs, topics, payloads, and timestamps.
+
+The absent `sighting` topic returned `None` through dictionary lookup.
+
+**Evidence / Log Reference:**
+
+```text
+test_save_and_load_events (test_storage.TestStorage.test_save_and_load_events) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+```
+
+**Verdict:**
+
+PASS — the combined event save/reload comparison succeeded.
+
 ### S-2 (STORAGE TEST 2) Atomic Write and Storage Failure
 
 **Expected:**
@@ -575,6 +620,105 @@ Existing atomic-write tests all **PASS 4/4**.
 
 Overall verification of S-2 remains **INCOMPLETE** pending directory-sync failure handling, sequence verification, and broker integration.
 
+
+
+### S-2 ATOMIC-WRITE RETEST
+
+**Expected:**
+
+The temporary file is synced before replacement. Directory-sync failure behavior is explicitly tested and recorded.
+
+**Input Values:**
+
+```json
+{"status": "ok"}
+```
+
+The directory-sync failure test injected `OSError("directory sync failed")` during the second fsync call.
+
+**Command To Test Used:**
+
+```bash
+PYTHONPATH=tests python3 -m unittest test_storage.TestAtomicWrite.test_aw_syncs_temp_file_before_replace test_storage.TestAtomicWrite.test_aw_ignores_directory_sync_failure -v
+```
+
+**Observed Results:**
+
+- An fsync call occurred before `os.replace()`.
+- The saved file contained the expected data.
+- When directory fsync failed, `atomic_write()` returned without raising an exception.
+- The directory descriptor was closed.
+- The new file remained readable, with no temporary files left behind.
+
+**Evidence / Log Reference:**
+
+```text
+test_aw_syncs_temp_file_before_replace (test_storage.TestAtomicWrite.test_aw_syncs_temp_file_before_replace) ... ok
+test_aw_ignores_directory_sync_failure (test_storage.TestAtomicWrite.test_aw_ignores_directory_sync_failure) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.002s
+
+OK
+```
+
+**Verdict:**
+
+PASS for the implemented assertions.
+
+**Known Limitations:**
+
+These tests do not assert the complete atomic-write sequence or identify which descriptor was synced before replacement.
+
+Directory-sync errors are silently ignored. This test documents that behavior; it does not demonstrate durability when directory syncing fails.
+
+
+### S-2 BROKER STORAGE-FAILURE RETEST
+
+**Expected:**
+
+A failed event save returns error `503` to the publisher, without fan-out or PUB_ACK.
+
+**Input Values:**
+
+A mocked publisher and subscriber registered under topic `sightings`.
+
+The test injected `OSError("Disk full")` when `storage.append_event()` was called.
+
+**Command To Test Used:**
+
+```bash
+PYTHONPATH=tests python3 -m unittest test_broker.TestBrokerConnection.test_failed_save_returns_503_without_fanout_or_pub_ack -v
+```
+
+**Observed Results:**
+
+The test confirmed that the save operation was attempted once.
+
+The only protocol reply sent through `_send_line()` was:
+
+```text
+ERR|503|store failure
+```
+
+That reply was directed to the publisher. No EVENT fan-out or PUB_ACK was sent.
+
+**Evidence / Log Reference:**
+
+```text
+test_failed_save_returns_503_without_fanout_or_pub_ack (test_broker.TestBrokerConnection.test_failed_save_returns_503_without_fanout_or_pub_ack) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.054s
+
+OK
+```
+
+**Verdict:**
+
+PASS — the mocked storage failure produced error `503` without fan-out or PUB_ACK.
+
+
 ### S-3 (STORAGE TEST 3) CORRUPT STORE LOG
 
 **Expected:**
@@ -609,6 +753,7 @@ OK
 **Verdict:**
 
 PASS for the storage-function check. Broker startup verification remains **BLOCKED** until integration.
+
 
 ### S-4 (STORAGE TEST 4) ACK OFFSETS AND PRUNING
 
@@ -671,9 +816,49 @@ OK
 
 Existing offset tests **PASS 6/6**. Combined save/reload verification remains untested. Pruning verification awaits confirmation of the retention policy and implementation.
 
+
+
+### S-4 OFFSET SAVE AND RELOAD RETEST
+
+**Expected:**
+
+Offsets saved for different subscribers and topics reload independently with their original values.
+
+**Input Values:**
+
+- `responseteam`: `poltergeist=3`, `sighting=5`.
+- `researcharchive`: `readings=64`, `sighting=5`, `poltergeist=3`.
+
+**Command To Test Used:**
+
+```bash
+PYTHONPATH=tests python3 -m unittest test_storage.TestStorage.test_save_and_load_offsets -v
+```
+
+**Observed Results:**
+
+The test saved each subscriber/topic offset using `save_offset()`, then reloaded the same temporary file using `load_offsets()`.
+
+The complete returned dictionary matched the original offsets.
+
+**Evidence / Log Reference:**
+
+```text
+test_save_and_load_offsets (test_storage.TestStorage.test_save_and_load_offsets) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK
+```
+
+**Verdict:**
+
+PASS — the combined offset save/reload comparison succeeded.
+
 ### Storage Stage Record
 
-**Date and code version:** November 15, 2026 — commit `728dfcc`.
+**Date and code version:** November 24, 2026 — commit `9c8f9b`.
 
 **Unit-test command actually run:**
 
@@ -683,7 +868,7 @@ PYTHONPATH=tests python3 -m unittest test_storage -v
 
 **Number of tests run / failures / errors:**
 
-- Tests run: 16
+- Tests run: 20
 - Failures: 0
 - Errors: 0
 
@@ -694,8 +879,10 @@ test_ae_to_existing_file (test_storage.TestAppendEvents.test_ae_to_existing_file
 test_ae_to_new_file (test_storage.TestAppendEvents.test_ae_to_new_file) ... ok
 test_ae_when_disk_full (test_storage.TestAppendEvents.test_ae_when_disk_full) ... ok
 test_aw_failure_cleanup (test_storage.TestAtomicWrite.test_aw_failure_cleanup) ... ok
+test_aw_ignores_directory_sync_failure (test_storage.TestAtomicWrite.test_aw_ignores_directory_sync_failure) ... ok
 test_aw_overwrite (test_storage.TestAtomicWrite.test_aw_overwrite) ... ok
 test_aw_success (test_storage.TestAtomicWrite.test_aw_success) ... ok
+test_aw_syncs_temp_file_before_replace (test_storage.TestAtomicWrite.test_aw_syncs_temp_file_before_replace) ... ok
 test_aw_unix_directory_sync (test_storage.TestAtomicWrite.test_aw_unix_directory_sync) ... ok
 test_load_corrupted_events_file (test_storage.TestLoadEvents.test_load_corrupted_events_file) ... ok
 test_load_missing_events_file (test_storage.TestLoadEvents.test_load_missing_events_file) ... ok
@@ -703,33 +890,38 @@ test_load_valid_events_file (test_storage.TestLoadEvents.test_load_valid_events_
 test_load_corrupted_offsets_file (test_storage.TestLoadOffsets.test_load_corrupted_offsets_file) ... ok
 test_load_missing_offsets_file (test_storage.TestLoadOffsets.test_load_missing_offsets_file) ... ok
 test_load_valid_offsets_file (test_storage.TestLoadOffsets.test_load_valid_offsets_file) ... ok
-test_so_to_existing_file (test_storage.TestSaveOffset.      test_so_to_existing_file) ... ok
+test_so_to_existing_file (test_storage.TestSaveOffset.test_so_to_existing_file) ... ok
 test_so_to_new_file (test_storage.TestSaveOffset.test_so_to_new_file) ... ok
 test_so_when_disk_full (test_storage.TestSaveOffset.test_so_when_disk_full) ... ok
+test_save_and_load_events (test_storage.TestStorage.test_save_and_load_events) ... ok
+test_save_and_load_offsets (test_storage.TestStorage.test_save_and_load_offsets) ... ok
 
 ----------------------------------------------------------------------
-Ran 16 tests in 0.007s
+Ran 20 tests in 0.017s
 
 OK
 ```
 
 **Checks still blocked or failing:**
 
-No failures occurred in the existing code. Remaining gaps and questions:
+No failures occurred in the updated storage suite. Retest results:
 
-- **S-01:** Save multiple events to the same topic, reload them using `load_events()`, and verify their values and order.
-- **S-02:** Verify the atomic-write call order and test directory-sync failures. The supplied implementation silently ignores directory-sync errors.
-- **S-02 — Broker integration:** Verify that storage failure produces error `503`, no fan-out, and no `PUB_ACK`.
-- **S-03 — Broker integration:** Verify that the broker refuses to start with a corrupt event log.
-- **S-04:** Save offsets using `save_offset()`, then reload the same data using `load_offsets()`.
-- **S-04:** Confirm the retention policy and whether pruning will be implemented.
+- **S-01:** PASS — saving and reloading multiple events preserved their values and order.
+- **S-02:** PASS for the implemented assertions — an fsync call occurred before replacement, and directory-sync failure behavior was tested. The complete operation sequence and descriptor identities were not verified.
+- **S-02 — Broker integration:** PASS — the separately run test confirmed error `503`, no fan-out, and no `PUB_ACK` after a mocked save failure.
+- **S-03 — Broker integration:** PASS — the separately run test confirmed that a corrupt event log prevented creation of a listening socket.
+- **S-04:** PASS — offsets saved using `save_offset()` reloaded correctly using `load_offsets()`.
+- **S-04 — Retention policy:** The team confirmed keep-all retention. Pruning is not implemented or tested.
+
+Directory-sync errors remain silently ignored. The passing test documents this behavior; durability after directory-sync failure was not established.
 
 **Stage verdict:**
 
-Overall unit-test suite: **PASSED 16/16**.
+Overall storage unit-test suite: **PASSED 20/20**.
 
-Overall storage checklist: **INCOMPLETE**, with outstanding checks and integration verification.
+Additional broker storage checks: **PASSED 2/2**, run separately.
 
+The documented atomic-write verification limits remain outstanding.
 
 ## INTEGRATION TESTING (DEVELOPERS: JOHN MARK AND MJ)
 
