@@ -76,6 +76,45 @@ class TestAtomicWrite(BaseStorageTest):
 		self.assertEqual(self._read_file(), init_data)
 		self._assert_no_tmp_files()
 
+	def test_aw_syncs_temp_file_before_replace(self):
+		calls = []
+		real_replace = os.replace # save the real function before mocking
+
+		# record the key operations once atomic_write calls them
+		def record_fsync(_fd):
+			calls.append("fsync")
+
+		def record_replace(src, dst):
+			calls.append("replace")
+			real_replace(src, dst)
+
+		dummy_data = {"status": "ok"}
+		with patch("common.storage.os.fsync", side_effect=record_fsync), \
+			patch("common.storage.os.replace", side_effect=record_replace):
+				atomic_write(self.file_path, dummy_data)
+
+		self.assertLess(calls.index("fsync"), calls.index("replace"))	# did fsync happen before replace?
+		self.assertEqual(self._read_file(), dummy_data)
+
+	def test_aw_ignores_directory_sync_failure(self):
+		data = {"status": "ok"}
+
+		# simulate running atomic write in a Unix OS
+		with patch("os.name", "posix"), \
+			patch("common.storage.os.open", return_value=99), \
+			patch(
+				"common.storage.os.fsync", 
+				side_effect=[None, OSError("directory sync failed")]
+				) as mock_fsync, \
+			patch("common.storage.os.close") as mock_close:
+
+			atomic_write(self.file_path, data)
+
+		self.assertEqual(mock_fsync.call_count, 2)
+		mock_close.assert_called_once_with(99)
+		self.assertEqual(self._read_file(), data)
+		self._assert_no_tmp_files()
+
 class TestLoadEvents(BaseStorageTest):
 	def test_load_missing_events_file(self):
 		# case: program runs the first time, data/ and its files won't exist yet
@@ -212,3 +251,66 @@ class TestSaveOffset(BaseStorageTest):
 		# failed save means delete .tmp, it is expected to have no lingering tmp files
 		self._assert_no_tmp_files() 
 
+class TestStorage(BaseStorageTest):
+	def test_save_and_load_events(self):
+		# initialize three new events
+		new_events: list[dict] = [
+			{
+				"event_id": "48b65d75e51b4f3c9ede73d6522cd7a2",
+				"topic": "readings",
+				"payload": {
+					"kind": "ambient reading",
+					"zone": "zone-a",
+					"level": 16,
+					"source": "ParanormalReadings"
+				},
+				"created_at": 1795416533.802806
+			},
+			{
+				"event_id": "1702e6ca6db747b5af72cd419ea44ba8",
+				"topic": "readings",
+				"payload": {
+					"kind": "ambient reading",
+					"zone": "zone-b",
+					"level": 99,
+					"source": "ParanormalReadings"
+				},
+				"created_at": 1795416536.8138928
+			},
+			{
+				"event_id": "6bfd48fe472742eca3116083391f1981",
+				"topic": "readings",
+				"payload": {
+					"kind": "ambient reading",
+					"zone": "zone-b",
+					"level": 96,
+					"source": "ParanormalReadings"
+				},
+				"created_at": 1795416539.8317566
+			}
+		]
+
+		# save three new events
+		for event in new_events:
+			append_event(event, self.file_path)
+
+		# load event file
+		loaded_events = load_events(self.file_path)
+		readings = loaded_events.get('readings')
+		sighting = loaded_events.get('sighting') # non-existent topic
+
+		# match if loaded events is the same as the events appended
+		self.assertEqual(readings, new_events)
+		self.assertEqual(sighting, None)
+
+	def test_save_and_load_offsets(self):
+		new_offsets: dict = {
+			"responseteam": {"poltergeist": 3, "sighting": 5},
+			"researcharchive": {"readings": 64, "sighting": 5, "poltergeist": 3},
+		}
+
+		for sub_id, topics in new_offsets.items():
+			for topic, index in topics.items():
+				save_offset(sub_id, topic, index, self.file_path)
+
+		self.assertEqual(load_offsets(self.file_path), new_offsets)

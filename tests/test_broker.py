@@ -3,8 +3,10 @@ import socket as sck
 import threading as thr
 import time as t
 import unittest as ut
-from unittest.mock import MagicMock, patch
 import os, sys, io
+from unittest.mock import MagicMock, patch
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -336,6 +338,44 @@ class TestBrokerConnection(ut.TestCase):
 
 		self.assertIn(b"422", client.sendall.call_args[0][0])
 		self.assertNotIn("sub_ack_3", broker.storage.load_offsets())
+
+	def test_failed_save_returns_503_without_fanout_or_pub_ack(self):
+		topic = "sightings"
+		# mock some clients
+		publisher = MagicMock()
+		subscriber = MagicMock()
+
+		with broker.sub_lock:
+			broker.subscriptions[topic] = [(subscriber, "sub_live")]
+
+		# simulate a disk error
+		with patch(
+			"broker.storage.append_event",
+			side_effect=OSError("Disk full"),
+		) as append_event, patch("broker._send_line") as send_line:
+			broker._handle_pub(publisher, topic, self._get_test_pub_payload())
+
+		# Verify that no fan out or pub_ack was sent after error 503
+		append_event.assert_called_once()
+		send_line.assert_called_once_with(
+			publisher,
+			prot.format_err(prot.ErrorCode.SERVICE_UNAVAILABLE, "store failure"),
+		)
+
+	def test_corrupt_log_blocks_startup(self):
+		real_load_events = broker.storage.load_events
+
+		with TemporaryDirectory() as temp_dir:
+			event_log = Path(temp_dir) / "event_log.json"
+			event_log.write_text('{"sightings": [', encoding="utf-8") # Inject malformed JSON
+
+			with patch(
+				"broker.storage.load_events",
+				side_effect=lambda: real_load_events(str(event_log)),
+			), patch("broker.sck.socket") as fake_socket:
+				broker.start_broker()  
+
+			fake_socket.assert_not_called()
 
 if __name__ == "__main__":
 	ut.main()
