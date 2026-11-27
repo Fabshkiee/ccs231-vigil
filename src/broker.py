@@ -21,6 +21,8 @@ client_send_locks: dict[sck.socket, thr.Lock] = {}
 topic_locks: dict[str, thr.Lock] = {}
 subscriptions: dict[str, list[tuple]] = {} # topic -> [(client, sub_id)]
 clients: dict[sck.socket, str] = {} # client -> sub_id
+client_threads: dict[sck.socket, thr.Thread] = {}
+client_threads_lock = thr.Lock()
 
 def _encode_msg(msg: str) -> bytes:
 	"""Encodes a string in utf-8"""
