@@ -377,5 +377,37 @@ class TestBrokerConnection(ut.TestCase):
 
 			fake_socket.assert_not_called()
 
+class TestBrokerShutdown(ut.TestCase):
+	def test_drain_closes_connections_when_budget_expires(self):
+		client = MagicMock()
+		release_worker = thr.Event()
+		worker = thr.Thread(target=release_worker.wait, daemon=True)
+		worker.start()
+		with broker.client_threads_lock:
+			broker.client_threads[client] = worker
+
+		self.addCleanup(release_worker.set)
+		self.addCleanup(worker.join, 1)
+		self.addCleanup(lambda: broker.client_threads.pop(client, None))
+
+		broker._drain_client_threads(0.01)
+
+		client.shutdown.assert_called_once_with(sck.SHUT_RDWR)
+		client.close.assert_called_once()
+
+	def test_drain_does_not_close_a_finished_client(self):
+		client = MagicMock()
+		worker = thr.Thread(target=lambda: None)
+		worker.start()
+		worker.join()
+		with broker.client_threads_lock:
+			broker.client_threads[client] = worker
+		self.addCleanup(lambda: broker.client_threads.pop(client, None))
+
+		broker._drain_client_threads(0.1)
+
+		client.shutdown.assert_not_called()
+		client.close.assert_not_called()
+
 if __name__ == "__main__":
 	ut.main()

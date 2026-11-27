@@ -21,6 +21,8 @@ client_send_locks: dict[sck.socket, thr.Lock] = {}
 topic_locks: dict[str, thr.Lock] = {}
 subscriptions: dict[str, list[tuple]] = {} # topic -> [(client, sub_id)]
 clients: dict[sck.socket, str] = {} # client -> sub_id
+client_threads: dict[sck.socket, thr.Thread] = {}
+client_threads_lock = thr.Lock()
 
 def _encode_msg(msg: str) -> bytes:
 	"""Encodes a string in utf-8"""
@@ -264,6 +266,39 @@ def handle_client(client: sck.socket, addr):
 	finally:
 		_drop_dead_sockets([client])
 		logger.info("broker", f"{addr} disconnected")
+
+def _run_client(client: sck.socket, addr) -> None:
+	try:
+		handle_client(client, addr)
+	finally:
+		with client_threads_lock:
+			client_threads.pop(client, None)
+
+def _drain_client_threads(timeout_s: float) -> None:
+	deadline = time.monotonic() + timeout_s
+	with client_threads_lock:
+		active = list(client_threads.items())
+
+	for _, worker in active:
+		worker.join(timeout=max(0.0, deadline - time.monotonic()))
+
+	with client_threads_lock:
+		remaining = [
+			client for client, worker in client_threads.items()
+			if worker.is_alive()
+		]
+
+	if remaining:
+		logger.info("broker", f"closing {len(remaining)} connections after drain timeout")
+		for client in remaining:
+			try:
+				client.shutdown(sck.SHUT_RDWR)
+			except OSError:
+				pass
+			try:
+				client.close()
+			except OSError:
+				pass
 					
 def start_broker():
 	# §7: a corrupt log is a loud failure, not an empty history
@@ -280,6 +315,7 @@ def start_broker():
 		server.settimeout(1.0) # wake up socket to allow keyboard interrupt
 		logger.info("broker", f"Listening on {BROKER_HOST}:{consts.PORT}")
 
+		shutdown_requested = False
 		try:
 			while True:
 				try:
@@ -287,17 +323,27 @@ def start_broker():
 				except TimeoutError:
 					continue
 
-				# offload current client to accept next client
-				thr.Thread(
-					target=handle_client, 
+				worker = thr.Thread(
+					target=_run_client,
 					args=(client, addr),
 					name=f"client-{addr[1]}", 
 					daemon=True
-				).start()
-				active_clients = sum(1 for t in thr.enumerate() if t.name.startswith("client-"))
+				)
+
+				with client_threads_lock:
+					client_threads[client] = worker
+
+				worker.start()
+				
+				with client_threads_lock:
+					active_clients = len(client_threads)
+				
 				logger.info("broker", f"Connected clients: {active_clients}")
 		except KeyboardInterrupt:
 			logger.info("broker", "Shutting down..")
+			shutdown_requested = True
+	if shutdown_requested:
+		_drain_client_threads(consts.DRAIN_S)
 	logger.info("broker", "Socket closed.")
 
 
